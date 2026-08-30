@@ -23,3 +23,7 @@ _Avoid_: validation (unless appropriate independent physical evidence is include
 **Indeterminate case**:
 A case for which the surrogate does not satisfy declared domain, quality, or agreement criteria and cannot yield an accepted screening result.
 _Avoid_: pass with warning
+
+**Prescribed bridging traction**:
+A declared crack-face closure load used to explore a fixed-crack numerical tracer. It represents neither resolved fibres nor a calibrated interface, and does not evolve with crack opening.
+_Avoid_: fibre bridging law, interface model

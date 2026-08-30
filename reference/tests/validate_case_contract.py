@@ -31,6 +31,7 @@ def test_solver_image_is_immutable_and_smoke_tests_its_contents() -> None:
     assert "ctest --test-dir /opt/cmc/build --output-on-failure" in source
     assert "reference-solver verify-case --output /tmp/reference-smoke" in source
     assert "reference-solver solve-case --output /tmp/reference-solve-smoke" in source
+    assert "reference-solver converge-bridged-case" in source
 
 
 def test_case_card_is_explicit_about_the_current_boundary() -> None:
@@ -55,9 +56,34 @@ def test_public_runner_declares_the_convergence_artifacts() -> None:
     assert "render_edge_crack_visual.py" in source
 
 
+def test_v2_bridged_case_declares_a_fixed_closure_traction_tracer() -> None:
+    source = (ROOT / "reference/cases/edge-cracked-plate-bridged-v2.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"case_id": "edge-cracked-plate-bridged-v2"' in source
+    assert '"kind": "prescribed-crack-face-closure-traction"' in source
+    assert '"crack_growth": "fixed"' in source
+    assert "not a traction-separation law" in source
+
+
+def test_public_runner_declares_the_bridged_tracer_command() -> None:
+    source = (ROOT / "reference/scripts/reference-solver").read_text(encoding="utf-8")
+    assert "converge-bridged-case" in source
+    assert "edge-cracked-plate-bridged-v2.json" in source
+
+
+def test_container_contract_exercises_the_bridged_artifact_validator() -> None:
+    source = (ROOT / "reference/tests/reference_container_test.sh").read_text(encoding="utf-8")
+    assert "converge-bridged-case --output /artifacts" in source
+    assert "validate_bridged_convergence_artifact.py" in source
+
+
 if __name__ == "__main__":
     test_geo_declares_fixed_benchmark_envelope()
     test_solver_image_is_immutable_and_smoke_tests_its_contents()
     test_case_card_is_explicit_about_the_current_boundary()
     test_case_card_declares_independent_j_contours_and_fixed_gates()
     test_public_runner_declares_the_convergence_artifacts()
+    test_v2_bridged_case_declares_a_fixed_closure_traction_tracer()
+    test_public_runner_declares_the_bridged_tracer_command()
+    test_container_contract_exercises_the_bridged_artifact_validator()

@@ -36,7 +36,7 @@ def main() -> None:
     for name, level in zip(level_names, card["mesh_levels"], strict=True):
         directory = args.output / "levels" / name
         directory.mkdir(parents=True, exist_ok=True)
-        mesh = directory / "edge-cracked-plate-v1.msh"
+        mesh = directory / f"{card['case_id']}.msh"
         audit = directory / "mesh-audit.json"
         subprocess.run(["python3", str(args.generator), "--case", str(args.case), "--output", str(mesh),
                         "--near-size", str(level["near_tip_mm"]), "--far-size", str(level["far_field_mm"])], check=True)
@@ -51,30 +51,33 @@ def main() -> None:
                        "mesh": json.loads(audit.read_text(encoding="utf-8"))["mesh"], "contours": contours,
                        "mean_j_mpa_mm": mean_j, "contour_spread_percent": percent_change(max(values), min(values))})
 
-    subprocess.run(["python3", str(args.visualizer), "--mesh", str(args.output / "levels" / "medium" / "edge-cracked-plate-v1.msh"),
+    subprocess.run(["python3", str(args.visualizer), "--mesh", str(args.output / "levels" / "medium" / f"{card['case_id']}.msh"),
                     "--output", str(args.output / "case-visual.svg"), "--case-card", str(args.case_card)], check=True)
-    target = card["analytical_authority"]["plane_strain_j_mpa_mm"]
     gates = card["fracture_quantity"]["gates"]
     fine, medium = levels[2], levels[1]
-    analytical_error = percent_change(fine["mean_j_mpa_mm"], target)
     fine_medium_change = percent_change(fine["mean_j_mpa_mm"], medium["mean_j_mpa_mm"])
     runtime_seconds = time.monotonic() - started
-    accepted = (analytical_error <= gates["analytical_error_percent_max"] and
-                fine_medium_change <= gates["fine_medium_change_percent_max"] and
+    accepted = (fine_medium_change <= gates["fine_medium_change_percent_max"] and
                 all(level["contour_spread_percent"] <= gates["contour_spread_percent_max"] for level in levels) and
                 runtime_seconds <= gates["runtime_seconds_max"])
-    write_json(args.output / "provenance-convergence.json", {
+    comparison = {"fine_medium_change_percent": fine_medium_change}
+    if "analytical_authority" in card:
+        target = card["analytical_authority"]["plane_strain_j_mpa_mm"]
+        analytical_error = percent_change(fine["mean_j_mpa_mm"], target)
+        comparison["fine_analytical_error_percent"] = analytical_error
+        accepted = accepted and analytical_error <= gates["analytical_error_percent_max"]
+    provenance = {
         "case_id": card["case_id"], "status": "accepted" if accepted else "indeterminate",
         "runtime": {"seconds_excluding_image_build": runtime_seconds, "limit_seconds": gates["runtime_seconds_max"],
                     "gmsh_version": subprocess.check_output(["gmsh", "-version"], text=True).strip(),
                     "dolfinx_version": __import__("dolfinx").__version__},
-        "analytical_authority": card["analytical_authority"], "levels": levels,
-        "comparison": {"fine_analytical_error_percent": analytical_error,
-                       "fine_medium_change_percent": fine_medium_change},
-        "gates": gates,
+        "levels": levels, "comparison": comparison, "gates": gates,
         "adjudication": "accepted numerical reference evidence" if accepted else "indeterminate numerical reference evidence",
-        "claim_boundary": "Numerical reference evidence for the declared isotropic plane-strain benchmark only; not CMC calibration, physical validation, qualification, or design authority."
-    })
+        "claim_boundary": card["claim_boundary"]
+    }
+    if "analytical_authority" in card:
+        provenance["analytical_authority"] = card["analytical_authority"]
+    write_json(args.output / "provenance-convergence.json", provenance)
 
 
 if __name__ == "__main__":

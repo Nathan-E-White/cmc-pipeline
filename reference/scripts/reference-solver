@@ -2,21 +2,27 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: reference-solver <verify-case|solve-case|converge-case> --output <directory>" >&2
+  echo "usage: reference-solver <verify-case|solve-case|converge-case|solve-bridged-case|converge-bridged-case> --output <directory>" >&2
   exit 64
 }
 
 command="${1:-}"
-[[ "${command}" == "verify-case" || "${command}" == "solve-case" || "${command}" == "converge-case" ]] || usage
+[[ "${command}" == "verify-case" || "${command}" == "solve-case" || "${command}" == "converge-case" || "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" ]] || usage
 shift
 [[ "${1:-}" == "--output" && -n "${2:-}" ]] || usage
 output_dir="$2"
 mkdir -p "${output_dir}"
 
-mesh_path="${output_dir}/edge-cracked-plate-v1.msh"
-if [[ "${command}" == "converge-case" ]]; then
+case_card="/opt/cmc/cases/edge-cracked-plate-v1.json"
+case_id="edge-cracked-plate-v1"
+if [[ "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" ]]; then
+  case_card="/opt/cmc/cases/edge-cracked-plate-bridged-v2.json"
+  case_id="edge-cracked-plate-bridged-v2"
+fi
+mesh_path="${output_dir}/${case_id}.msh"
+if [[ "${command}" == "converge-case" || "${command}" == "converge-bridged-case" ]]; then
   python3 /opt/cmc/python/converge_edge_crack.py \
-    --case-card /opt/cmc/cases/edge-cracked-plate-v1.json \
+    --case-card "${case_card}" \
     --case /opt/cmc/cases/edge-cracked-plate-v1.geo \
     --output "${output_dir}" \
     --generator /opt/cmc/python/generate_edge_crack_mesh.py \
@@ -30,28 +36,26 @@ python3 /opt/cmc/python/generate_edge_crack_mesh.py --case /opt/cmc/cases/edge-c
   --output "${mesh_path}" --near-size 2 --far-size 10
 /usr/local/bin/mesh-audit "${mesh_path}" "${output_dir}/mesh-audit.json"
 
-if [[ "${command}" == "solve-case" ]]; then
+if [[ "${command}" == "solve-case" || "${command}" == "solve-bridged-case" ]]; then
   python3 /opt/cmc/python/solve_edge_crack.py --mesh "${mesh_path}" --output "${output_dir}" \
-    --case-card /opt/cmc/cases/edge-cracked-plate-v1.json
+    --case-card "${case_card}"
 fi
 
-python3 - "${output_dir}/environment.json" "${command}" <<'PY'
+python3 - "${output_dir}/environment.json" "${command}" "${case_card}" <<'PY'
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import dolfinx
 
+case_card = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+solved = sys.argv[2] in {"solve-case", "solve-bridged-case"}
 payload = {
     "gmsh_version": subprocess.check_output(["gmsh", "-version"], text=True).strip(),
     "dolfinx_version": getattr(dolfinx, "__version__", "unknown"),
-    "case_id": "edge-cracked-plate-v1",
-    "claim_boundary": (
-        "One fixed isotropic plane-strain numerical reference solve with a numerical domain-integral fracture quantity; "
-        "no CMC calibration, physical validation, qualification, or design authority."
-        if len(sys.argv) > 2 and sys.argv[2] == "solve-case"
-        else "Meshing and audit only; no reference solution has been executed."
-    ),
+    "case_id": case_card["case_id"],
+    "claim_boundary": case_card["claim_boundary"] if solved else "Meshing and audit only; no reference solution has been executed.",
 }
 with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump(payload, stream, indent=2, sort_keys=True)

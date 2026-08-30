@@ -32,6 +32,9 @@ RUN test -s /tmp/reference-solve-smoke/displacement.xdmf \
 RUN /opt/cmc/bin/reference-solver converge-case --output /tmp/reference-convergence-smoke
 RUN test -s /tmp/reference-convergence-smoke/provenance-convergence.json \
     && test -s /tmp/reference-convergence-smoke/case-visual.svg
+RUN /opt/cmc/bin/reference-solver converge-bridged-case --output /tmp/reference-bridged-convergence-smoke
+RUN test -s /tmp/reference-bridged-convergence-smoke/provenance-convergence.json \
+    && test -s /tmp/reference-bridged-convergence-smoke/case-visual.svg
 RUN gmsh /opt/cmc/cases/invalid-edge-plate.geo -2 -format msh41 -o /tmp/invalid-edge-plate.msh
 RUN ! /usr/local/bin/mesh-audit /tmp/invalid-edge-plate.msh /tmp/invalid-edge-plate-audit.json
 RUN ! /opt/cmc/bin/reference-solver not-a-command

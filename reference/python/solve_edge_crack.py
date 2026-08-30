@@ -8,21 +8,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 from pathlib import Path
 
 import numpy as np
 import ufl
+from dolfinx import fem, io, mesh
+from dolfinx.fem.petsc import LinearProblem
 from mpi4py import MPI
 from petsc4py import PETSc
 
-from dolfinx import fem, io, mesh
-from dolfinx.fem.petsc import LinearProblem
-
-
-E_MPA = 200_000.0
-POISSONS_RATIO = 0.3
-TRACTION_MPA = 100.0
 CRACK_TIP_MM = (30.0, 100.0)
 
 
@@ -31,17 +25,23 @@ def _write_json(path: Path, payload: dict) -> None:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _stress(domain: mesh.Mesh, displacement):
+def _stress(domain: mesh.Mesh, displacement, youngs_modulus_mpa: float, poissons_ratio: float):
     identity = ufl.Identity(domain.geometry.dim)
     strain = ufl.sym(ufl.grad(displacement))
-    mu = E_MPA / (2.0 * (1.0 + POISSONS_RATIO))
-    lame_lambda = E_MPA * POISSONS_RATIO / (
-        (1.0 + POISSONS_RATIO) * (1.0 - 2.0 * POISSONS_RATIO)
+    mu = youngs_modulus_mpa / (2.0 * (1.0 + poissons_ratio))
+    lame_lambda = youngs_modulus_mpa * poissons_ratio / (
+        (1.0 + poissons_ratio) * (1.0 - 2.0 * poissons_ratio)
     )
     return lame_lambda * ufl.tr(strain) * identity + 2.0 * mu * strain
 
 
-def _domain_integral_j(domain: mesh.Mesh, displacement: fem.Function, radius_mm: float) -> float:
+def _domain_integral_j(
+    domain: mesh.Mesh,
+    displacement: fem.Function,
+    radius_mm: float,
+    youngs_modulus_mpa: float,
+    poissons_ratio: float,
+) -> float:
     """Evaluate the x-directed J quantity with a compact radial weight field."""
     Q = fem.functionspace(domain, ("Lagrange", 1))
     weight = fem.Function(Q)
@@ -53,7 +53,7 @@ def _domain_integral_j(domain: mesh.Mesh, displacement: fem.Function, radius_mm:
 
     weight.interpolate(radial_weight)
     strain = lambda w: ufl.sym(ufl.grad(w))
-    stress = _stress(domain, displacement)
+    stress = _stress(domain, displacement, youngs_modulus_mpa, poissons_ratio)
     energy_density = 0.5 * ufl.inner(stress, strain(displacement))
     displacement_x_derivative = ufl.grad(displacement)[:, 0]
     energy_momentum = ufl.dot(stress, displacement_x_derivative) - ufl.as_vector(
@@ -71,6 +71,10 @@ def main() -> None:
     args = parser.parse_args()
     case_card = json.loads(args.case_card.read_text(encoding="utf-8"))
     contours = case_card["fracture_quantity"]["contour_radii_mm"]
+    model = case_card["model"]
+    youngs_modulus_mpa = model["youngs_modulus_gpa"] * 1_000.0
+    poissons_ratio = model["poissons_ratio"]
+    nominal_traction_mpa = model["nominal_traction_mpa"]
 
     comm = MPI.COMM_WORLD
     mesh_data = io.gmsh.read_from_msh(args.mesh, comm, rank=0, gdim=2)
@@ -89,13 +93,25 @@ def main() -> None:
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     strain = lambda w: ufl.sym(ufl.grad(w))
-    stress = lambda w: _stress(domain, w)
+    stress = lambda w: _stress(domain, w, youngs_modulus_mpa, poissons_ratio)
 
     dx = ufl.Measure("dx", domain=domain)
     ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tags)
     a_form = ufl.inner(stress(u), strain(v)) * dx
-    traction = fem.Constant(domain, np.array((0.0, TRACTION_MPA), dtype=PETSc.ScalarType))
+    traction = fem.Constant(
+        domain, np.array((0.0, nominal_traction_mpa), dtype=PETSc.ScalarType)
+    )
     l_form = ufl.dot(traction, v) * ds(physical_groups["loaded"].tag)
+    bridging = model.get("bridging")
+    if bridging is not None:
+        if bridging["kind"] != "prescribed-crack-face-closure-traction":
+            raise RuntimeError(f"Unsupported bridging kind: {bridging['kind']}")
+        crack_length_mm = case_card["geometry"]["crack_length_mm"]
+        coordinates = ufl.SpatialCoordinate(domain)
+        closure_mpa = bridging["peak_traction_mpa"] * (1.0 - coordinates[0] / crack_length_mm)
+        l_form += ufl.dot(closure_mpa * ufl.FacetNormal(domain), v) * ds(
+            physical_groups["crack_faces"].tag
+        )
 
     support_facets = facet_tags.find(physical_groups["support_y"].tag)
     y_dofs = fem.locate_dofs_topological(V.sub(1), domain.topology.dim - 1, support_facets)
@@ -123,7 +139,12 @@ def main() -> None:
     displacement.name = "displacement_mm"
 
     contour_values = [
-        {"radius_mm": radius, "j_mpa_mm": _domain_integral_j(domain, displacement, radius)}
+        {
+            "radius_mm": radius,
+            "j_mpa_mm": _domain_integral_j(
+                domain, displacement, radius, youngs_modulus_mpa, poissons_ratio
+            ),
+        }
         for radius in contours
     ]
 
@@ -134,13 +155,18 @@ def main() -> None:
 
     local_values = displacement.x.array
     summary = {
-        "case_id": "edge-cracked-plate-v1",
+        "case_id": case_card["case_id"],
         "status": "solved",
-        "model": "linear-elastic plane strain",
+        "model": (
+            "linear-elastic plane strain"
+            if bridging is None
+            else "linear-elastic plane strain with prescribed crack-face closure traction"
+        ),
         "fixed_external_values": {
-            "youngs_modulus_mpa": E_MPA,
-            "poissons_ratio": POISSONS_RATIO,
-            "nominal_traction_mpa": TRACTION_MPA,
+            "youngs_modulus_mpa": youngs_modulus_mpa,
+            "poissons_ratio": poissons_ratio,
+            "nominal_traction_mpa": nominal_traction_mpa,
+            **({"bridging": bridging} if bridging is not None else {}),
         },
         "displacement_mm": {
             "local_linf": float(np.max(np.abs(local_values))) if local_values.size else 0.0,
@@ -150,7 +176,7 @@ def main() -> None:
             "direction": "crack-extension-x",
             "contours": contour_values,
         },
-        "claim_boundary": "One fixed isotropic plane-strain numerical reference solve with a numerical domain-integral fracture quantity; no CMC calibration, physical validation, qualification, or design authority.",
+        "claim_boundary": case_card["claim_boundary"],
     }
     _write_json(args.output / "solution-summary.json", summary)
 

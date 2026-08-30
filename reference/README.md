@@ -25,6 +25,20 @@ docker --context orbstack run --rm -v "$(pwd)/reference/runs:/artifacts" \
   cmc-reference-solver:test converge-case --output /artifacts
 ```
 
+The V2 fixed-crack bridging tracer uses the same audited geometry but adds one
+prescribed, linearly tapered closure-traction load. It is not a calibrated CMC
+material model:
+
+```sh
+docker --context orbstack run --rm -v "$(pwd)/reference/runs:/artifacts" \
+  cmc-reference-solver:test converge-bridged-case --output /artifacts
+```
+
+Its `provenance-convergence.json` records mesh/contour agreement and runtime,
+but intentionally has no NASA comparison or analytical-authority field. Its
+domain integral is a diagnostic for the declared loading, not a path-independent
+material toughness.
+
 The command writes:
 
 - `levels/{coarse,medium,fine}/`: the declared mesh sizes, audits, solved fields,
@@ -41,8 +55,8 @@ the fine result with the fixed NASA correction value, and fails closed to an
 `indeterminate` artifact when any declared gate is missed. The result remains a
 numerical reference for this bounded isotropic benchmark, not experimental truth.
 
-`mesh-audit` is intentionally hard-coded to `edge-cracked-plate-v1`; it checks
-that case's physical entities, dimensions, crack trace, quadratic triangles,
-and minimum mesh quality. Before the runner supports a second case, replace
-those literals with an explicit audit-contract input rather than accumulating
-case-specific branches.
+`mesh-audit` is intentionally hard-coded to the shared edge-cracked-plate
+geometry; it checks its physical entities, dimensions, crack trace, quadratic
+triangles, and minimum mesh quality. A V2 case with different geometry must
+provide an explicit audit-contract input rather than accumulating case-specific
+branches.
