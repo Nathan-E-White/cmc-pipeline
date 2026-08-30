@@ -12,7 +12,22 @@ export type ReferenceRunSubmission = {
 export type ReferenceRun = {
 	runId: string
 	caseId: string
-	status: "queued" | "running" | "complete" | "failed"
+	status: "queued"
+}
+
+export type FixtureDescriptor = {
+	corpusId: string
+	kind: "representative"
+}
+
+export type FixtureProvenance = {
+	sourceKind: "fixture"
+}
+
+export type ReferenceRunSubmissionResponse = {
+	fixture: FixtureDescriptor
+	provenance: FixtureProvenance
+	run: ReferenceRun
 }
 
 export type HttpRequest = {
@@ -39,7 +54,9 @@ export class SimulationApiError extends Error {
 
 export function createSimulationClient(transport: HttpTransport) {
 	return {
-		submitReferenceRun: async (submission: ReferenceRunSubmission): Promise<ReferenceRun> => {
+		submitReferenceRun: async (
+			submission: ReferenceRunSubmission,
+		): Promise<ReferenceRunSubmissionResponse> => {
 			const response = await transport.request({
 				method: "POST",
 				path: "/api/v1/reference-runs",
@@ -73,19 +90,34 @@ export function createFetchTransport(fetchImplementation: typeof fetch = fetch):
 	}
 }
 
-function parseReferenceRun(body: unknown): ReferenceRun {
-	if (!isRecord(body) || !isRecord(body.run)) {
-		throw new SimulationApiError("Fixture reference-run response was malformed.")
-	}
-	const { case_id: caseId, run_id: runId, status } = body.run
+function parseReferenceRun(body: unknown): ReferenceRunSubmissionResponse {
 	if (
-		typeof caseId !== "string" ||
-		typeof runId !== "string" ||
-		(status !== "queued" && status !== "running" && status !== "complete" && status !== "failed")
+		!isRecord(body) ||
+		body.api_version !== "v1" ||
+		!isRecord(body.fixture) ||
+		!isRecord(body.provenance) ||
+		!isRecord(body.run)
 	) {
 		throw new SimulationApiError("Fixture reference-run response was malformed.")
 	}
-	return { caseId, runId, status }
+	const { corpus_id: corpusId, kind } = body.fixture
+	const { source_kind: sourceKind } = body.provenance
+	const { case_id: caseId, run_id: runId, status } = body.run
+	if (
+		typeof corpusId !== "string" ||
+		kind !== "representative" ||
+		sourceKind !== "fixture" ||
+		typeof caseId !== "string" ||
+		typeof runId !== "string" ||
+		status !== "queued"
+	) {
+		throw new SimulationApiError("Fixture reference-run response was malformed.")
+	}
+	return {
+		fixture: { corpusId, kind },
+		provenance: { sourceKind },
+		run: { caseId, runId, status },
+	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -23,7 +23,7 @@ test("submits a declared fixture reference run through the API transport", async
 		},
 	})
 
-	const run = await client.submitReferenceRun({
+	const response = await client.submitReferenceRun({
 		caseId: "sic-sic-panel-042",
 		inputs: {
 			coatingShearLimitMpa: 60,
@@ -46,9 +46,51 @@ test("submits a declared fixture reference run through the API transport", async
 			},
 		},
 	])
-	expect(run).toEqual({
-		runId: "run-0001",
-		caseId: "sic-sic-panel-042",
-		status: "queued",
+	expect(response).toEqual({
+		fixture: { corpusId: "v1-demo-2026-08", kind: "representative" },
+		provenance: { sourceKind: "fixture" },
+		run: { runId: "run-0001", caseId: "sic-sic-panel-042", status: "queued" },
 	})
 })
+
+test("rejects a reference-run submission response that is not queued", async () => {
+	const client = createSimulationClient({
+		request: async () => ({
+			status: 202,
+			body: {
+				api_version: "v1",
+				fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
+				provenance: { source_kind: "fixture" },
+				run: { run_id: "run-0001", case_id: "sic-sic-panel-042", status: "complete" },
+			},
+		}),
+	})
+
+	await expect(client.submitReferenceRun(referenceRunSubmission)).rejects.toThrow(
+		"Fixture reference-run response was malformed.",
+	)
+})
+
+test("rejects a reference-run submission response without the common envelope", async () => {
+	const client = createSimulationClient({
+		request: async () => ({
+			status: 202,
+			body: {
+				run: { run_id: "run-0001", case_id: "sic-sic-panel-042", status: "queued" },
+			},
+		}),
+	})
+
+	await expect(client.submitReferenceRun(referenceRunSubmission)).rejects.toThrow(
+		"Fixture reference-run response was malformed.",
+	)
+})
+
+const referenceRunSubmission = {
+	caseId: "sic-sic-panel-042",
+	inputs: {
+		coatingShearLimitMpa: 60,
+		mechanicalLoadKn: 45,
+		thermalGradientCPerMm: 120,
+	},
+}
