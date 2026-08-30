@@ -26,10 +26,10 @@ Curve{5} In Surface{1};
 Physical Surface("plate", 1) = {1};
 Physical Curve("loaded", 2) = {3};
 Physical Curve("support_y", 3) = {1};
-// This is a geometric crack trace only. A later reference-solution slice must
-// replace it with a two-sided discontinuity before computing a J-integral.
 Physical Curve("crack_trace", 4) = {5};
 Physical Point("x_anchor", 5) = {1};
+Physical Point("crack_mouth", 6) = {5};
+Physical Curve("crack_faces", 7) = {};
 
 Field[1] = Distance;
 Field[1].PointsList = {6};

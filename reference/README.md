@@ -1,8 +1,9 @@
 # Local reference-solver container
 
 This is the local execution foundation for the CMC fracture reference path.
-It deliberately stops at a generated and audited mesh. It does not execute a
-reference solution, calculate a J-integral, or make a material or design claim.
+It executes one fixed, isotropic, linear-elastic plane-strain reference solve
+on a generated and audited mesh. It does not yet calculate a J-integral or
+make a material, validation, qualification, or design claim.
 
 ## Build and smoke test
 
@@ -13,14 +14,14 @@ bash reference/tests/reference_container_test.sh
 
 The Dockerfile pins the official DOLFINx multi-architecture manifest by digest.
 It installs Gmsh and its C++ headers, builds the C++20 `mesh-audit` executable,
-runs its CTest suite, then runs the exact public `verify-case` command while
-building the image.
+runs its CTest suite, then runs both public commands while building the image,
+including a real plane-strain solve.
 
 ## Public command
 
 ```sh
 docker --context orbstack run --rm -v "$(pwd)/reference/runs:/artifacts" \
-  cmc-reference-solver:test verify-case --output /artifacts
+  cmc-reference-solver:test solve-case --output /artifacts
 ```
 
 The command writes:
@@ -28,10 +29,13 @@ The command writes:
 - `edge-cracked-plate-v1.msh`: quadratic Gmsh mesh;
 - `mesh-audit.json`: mesh bounds, entity counts, and required physical groups;
 - `environment.json`: Gmsh/DOLFINx runtime versions and the current claim boundary.
+- `displacement.xdmf`: the solved displacement field;
+- `solution-summary.json`: fixed model values and a bounded solve summary.
 
-The `.geo` file intentionally has an embedded `crack_trace`, not two crack
-faces. The later reference-solution slice must introduce a real discontinuity
-before it may compute a J-integral. This is a guardrail, not a missing label.
+The generator uses Gmsh's Crack plugin to turn the declared `crack_trace` into
+two topologically separate `crack_faces`; `mesh-audit` rejects a mesh that
+lacks that opened topology. The next closure item is domain-integral J
+convergence; the present solve must not be presented as a J result.
 
 `mesh-audit` is intentionally hard-coded to `edge-cracked-plate-v1`; it checks
 that case's physical entities, dimensions, crack trace, quadratic triangles,

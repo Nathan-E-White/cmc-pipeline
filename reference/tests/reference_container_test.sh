@@ -10,10 +10,13 @@ docker --context "${context}" build --tag "${image}" --file containers/solver.Do
 docker --context "${context}" run --rm \
   --volume "${output_dir}:/artifacts" \
   "${image}" \
-  verify-case --output /artifacts
+  solve-case --output /artifacts
 
 test -s "${output_dir}/mesh-audit.json"
 test -s "${output_dir}/environment.json"
+test -s "${output_dir}/displacement.xdmf"
+test -s "${output_dir}/solution-summary.json"
 test "$(jq -r '.status' "${output_dir}/mesh-audit.json")" = "accepted"
 test "$(jq -r '.mesh.minimum_quality >= 0.2' "${output_dir}/mesh-audit.json")" = "true"
 test "$(jq -r '.dolfinx_version' "${output_dir}/environment.json")" != "unavailable"
+test "$(jq -r '.status' "${output_dir}/solution-summary.json")" = "solved"

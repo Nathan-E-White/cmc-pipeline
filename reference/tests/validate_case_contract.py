@@ -19,6 +19,7 @@ def test_geo_declares_fixed_benchmark_envelope() -> None:
         'Physical Curve("loaded", 2)',
         'Physical Curve("support_y", 3)',
         'Physical Curve("crack_trace", 4)',
+        'Physical Curve("crack_faces", 7)',
         'Physical Point("x_anchor", 5)',
     ):
         assert declaration in source
@@ -29,12 +30,13 @@ def test_solver_image_is_immutable_and_smoke_tests_its_contents() -> None:
     assert "dolfinx/dolfinx:stable@sha256:" in source
     assert "ctest --test-dir /opt/cmc/build --output-on-failure" in source
     assert "reference-solver verify-case --output /tmp/reference-smoke" in source
+    assert "reference-solver solve-case --output /tmp/reference-solve-smoke" in source
 
 
 def test_case_card_is_explicit_about_the_current_boundary() -> None:
     source = (ROOT / "reference/cases/edge-cracked-plate-v1.json").read_text(encoding="utf-8")
-    assert '"status": "mesh-audit-only"' in source
-    assert "does not execute a reference solution or report J" in source
+    assert '"status": "plane-strain-solve-no-j"' in source
+    assert "executes one linear-elastic plane-strain reference solve; it does not yet report J" in source
 
 
 if __name__ == "__main__":

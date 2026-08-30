@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
   }
 
   const std::set<std::string> required_names = {
-      "plate", "loaded", "support_y", "crack_trace", "x_anchor"};
+      "plate", "loaded", "support_y", "crack_trace", "crack_faces", "x_anchor"};
   try {
     gmsh::initialize();
     gmsh::open(argv[1]);
@@ -141,9 +141,29 @@ int main(int argc, char** argv) {
       }
       return false;
     }();
+    const bool has_open_crack_faces = [&]() {
+      for (const auto& [dimension, tag] : physical_groups) {
+        std::string name;
+        gmsh::model::getPhysicalName(dimension, tag, name);
+        if (name != "crack_faces" || dimension != 1) continue;
+        std::vector<int> entities;
+        gmsh::model::getEntitiesForPhysicalGroup(dimension, tag, entities);
+        if (entities.empty() || entities == std::vector<int>{5}) return false;
+        for (const int entity : entities) {
+          double min_x, min_y, min_z, max_x, max_y, max_z;
+          gmsh::model::getBoundingBox(1, entity, min_x, min_y, min_z, max_x, max_y, max_z);
+          if (!approximately_equal(min_x, 0.0) || !approximately_equal(max_x, 30.0) ||
+              !approximately_equal(min_y, 100.0) || !approximately_equal(max_y, 100.0)) {
+            return false;
+          }
+        }
+        return true;
+      }
+      return false;
+    }();
     const bool accepted = has_required_groups && has_expected_group_entities && has_expected_bounds &&
-                          has_valid_crack_trace && has_quadratic_triangles && !node_tags.empty() &&
-                          element_count > 0 && minimum_quality >= 0.2;
+                          has_valid_crack_trace && has_open_crack_faces && has_quadratic_triangles &&
+                          !node_tags.empty() && element_count > 0 && minimum_quality >= 0.2;
     const std::string reason = accepted ? "Mesh matches the declared benchmark envelope."
                                         : "Mesh does not satisfy declared topology, bounds, order, or quality.";
     write_json(argv[2], accepted, bounds, node_tags.size(), element_count, minimum_quality, names,
