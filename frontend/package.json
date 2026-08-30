@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000",
+    "test": "bun test",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
@@ -29,6 +30,7 @@
     "@tanstack/devtools-vite": "latest",
     "@tanstack/intent": "^0.3.7",
     "@tanstack/router-cli": "^1.133.21",
+    "@types/bun": "^1.4.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "vite-plugin-solid": "^2.11.12"
