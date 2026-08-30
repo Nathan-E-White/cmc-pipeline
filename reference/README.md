@@ -1,9 +1,10 @@
 # Local reference-solver container
 
 This is the local execution foundation for the CMC fracture reference path.
-It executes one fixed, isotropic, linear-elastic plane-strain reference solve
-on a generated and audited mesh. It does not yet calculate a J-integral or
-make a material, validation, qualification, or design claim.
+It executes the declared fixed, isotropic, linear-elastic plane-strain reference
+benchmark on generated and audited meshes, including a bounded domain-integral
+fracture quantity convergence run. It makes no CMC calibration, physical
+validation, qualification, or design claim.
 
 ## Build and smoke test
 
@@ -15,27 +16,31 @@ bash reference/tests/reference_container_test.sh
 The Dockerfile pins the official DOLFINx multi-architecture manifest by digest.
 It installs Gmsh and its C++ headers, builds the C++20 `mesh-audit` executable,
 runs its CTest suite, then runs both public commands while building the image,
-including a real plane-strain solve.
+including a real plane-strain solve and all-level convergence gate.
 
 ## Public command
 
 ```sh
 docker --context orbstack run --rm -v "$(pwd)/reference/runs:/artifacts" \
-  cmc-reference-solver:test solve-case --output /artifacts
+  cmc-reference-solver:test converge-case --output /artifacts
 ```
 
 The command writes:
 
-- `edge-cracked-plate-v1.msh`: quadratic Gmsh mesh;
-- `mesh-audit.json`: mesh bounds, entity counts, and required physical groups;
-- `environment.json`: Gmsh/DOLFINx runtime versions and the current claim boundary.
-- `displacement.xdmf`: the solved displacement field;
-- `solution-summary.json`: fixed model values and a bounded solve summary.
+- `levels/{coarse,medium,fine}/`: the declared mesh sizes, audits, solved fields,
+  and per-level J summaries;
+- `provenance-convergence.json`: runtime, mesh statistics, two contour values at
+  every level, NASA comparison, gates, and adjudication;
+- `case-visual.svg`: a deterministic view rendered from the actual generated
+  medium mesh and its declared load, support, and crack-face geometry.
 
 The generator uses Gmsh's Crack plugin to turn the declared `crack_trace` into
 two topologically separate `crack_faces`; `mesh-audit` rejects a mesh that
 lacks that opened topology. The next closure item is domain-integral J
-convergence; the present solve must not be presented as a J result.
+convergence uses the two independently declared radii (8 and 12 mm), compares
+the fine result with the fixed NASA correction value, and fails closed to an
+`indeterminate` artifact when any declared gate is missed. The result remains a
+numerical reference for this bounded isotropic benchmark, not experimental truth.
 
 `mesh-audit` is intentionally hard-coded to `edge-cracked-plate-v1`; it checks
 that case's physical entities, dimensions, crack trace, quadratic triangles,

@@ -10,13 +10,10 @@ docker --context "${context}" build --tag "${image}" --file containers/solver.Do
 docker --context "${context}" run --rm \
   --volume "${output_dir}:/artifacts" \
   "${image}" \
-  solve-case --output /artifacts
+  converge-case --output /artifacts
 
-test -s "${output_dir}/mesh-audit.json"
-test -s "${output_dir}/environment.json"
-test -s "${output_dir}/displacement.xdmf"
-test -s "${output_dir}/solution-summary.json"
-test "$(jq -r '.status' "${output_dir}/mesh-audit.json")" = "accepted"
-test "$(jq -r '.mesh.minimum_quality >= 0.2' "${output_dir}/mesh-audit.json")" = "true"
-test "$(jq -r '.dolfinx_version' "${output_dir}/environment.json")" != "unavailable"
-test "$(jq -r '.status' "${output_dir}/solution-summary.json")" = "solved"
+test -s "${output_dir}/provenance-convergence.json"
+test -s "${output_dir}/case-visual.svg"
+python3 reference/tests/validate_convergence_artifact.py "${output_dir}/provenance-convergence.json"
+jq 'del(.levels[2].contours[1])' "${output_dir}/provenance-convergence.json" > "${output_dir}/invalid-convergence.json"
+! python3 reference/tests/validate_convergence_artifact.py "${output_dir}/invalid-convergence.json"

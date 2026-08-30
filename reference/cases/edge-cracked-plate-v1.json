@@ -1,6 +1,6 @@
 {
   "case_id": "edge-cracked-plate-v1",
-  "status": "plane-strain-solve-no-j",
+  "status": "plane-strain-solve-with-j",
   "geometry": {
     "width_mm": 100,
     "height_mm": 200,
@@ -21,7 +21,18 @@
   "analytical_authority": {
     "source": "NASA edge-cracked plate in tension correction",
     "a_over_w": 0.3,
-    "status": "planned-for-j-convergence-slice"
+    "geometry_factor": 1.659919,
+    "plane_strain_j_mpa_mm": 11.815615
   },
-  "claim_boundary": "Fixed numerical benchmark values, not CMC calibration. The current container generates an audited opened crack and executes one linear-elastic plane-strain reference solve; it does not yet report J."
+  "fracture_quantity": {
+    "method": "domain-integral",
+    "contour_radii_mm": [8, 12],
+    "gates": {
+      "analytical_error_percent_max": 5.0,
+      "fine_medium_change_percent_max": 2.5,
+      "contour_spread_percent_max": 2.5,
+      "runtime_seconds_max": 300
+    }
+  },
+  "claim_boundary": "Fixed numerical benchmark values, not CMC calibration. The container generates an audited opened crack, executes one linear-elastic plane-strain reference solve, and reports a numerical domain-integral fracture quantity; it does not establish physical validation, qualification, or design authority."
 }

@@ -35,11 +35,29 @@ def test_solver_image_is_immutable_and_smoke_tests_its_contents() -> None:
 
 def test_case_card_is_explicit_about_the_current_boundary() -> None:
     source = (ROOT / "reference/cases/edge-cracked-plate-v1.json").read_text(encoding="utf-8")
-    assert '"status": "plane-strain-solve-no-j"' in source
-    assert "executes one linear-elastic plane-strain reference solve; it does not yet report J" in source
+    assert '"status": "plane-strain-solve-with-j"' in source
+    assert "reports a numerical domain-integral fracture quantity" in source
+
+
+def test_case_card_declares_independent_j_contours_and_fixed_gates() -> None:
+    source = (ROOT / "reference/cases/edge-cracked-plate-v1.json").read_text(encoding="utf-8")
+    assert '"method": "domain-integral"' in source
+    assert '"contour_radii_mm": [8, 12]' in source
+    assert '"analytical_error_percent_max": 5.0' in source
+    assert '"fine_medium_change_percent_max": 2.5' in source
+    assert '"contour_spread_percent_max": 2.5' in source
+
+
+def test_public_runner_declares_the_convergence_artifacts() -> None:
+    source = (ROOT / "reference/scripts/reference-solver").read_text(encoding="utf-8")
+    assert "converge-case" in source
+    assert "converge_edge_crack.py" in source
+    assert "render_edge_crack_visual.py" in source
 
 
 if __name__ == "__main__":
     test_geo_declares_fixed_benchmark_envelope()
     test_solver_image_is_immutable_and_smoke_tests_its_contents()
     test_case_card_is_explicit_about_the_current_boundary()
+    test_case_card_declares_independent_j_contours_and_fixed_gates()
+    test_public_runner_declares_the_convergence_artifacts()
