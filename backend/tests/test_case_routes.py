@@ -136,6 +136,23 @@ def test_submits_a_known_fixture_reference_run() -> None:
     assert payload["fixture"]["corpus_id"] == "v1-demo-2026-08"
 
 
+def test_normalises_non_object_reference_run_commands_to_the_declared_error_envelope() -> None:
+    response = client.post(
+        "/api/v1/reference-runs",
+        content="[]",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "api_version": "v1",
+        "error": {
+            "code": "invalid_reference_run",
+            "message": "A JSON object is required for this fixture command.",
+        },
+    }
+
+
 def test_observing_a_queued_run_advances_to_its_fixture_terminal_state() -> None:
     run_id = submit_reference_run()
 
@@ -188,6 +205,23 @@ def test_verifies_a_matching_surrogate_observation_against_a_reference_run() -> 
     assert response.status_code == 201
     assert response.json()["verification"]["status"] == "accepted"
     assert response.json()["verification"]["relative_error"] == 0.0242
+
+
+def test_normalises_malformed_verification_commands_to_the_declared_error_envelope() -> None:
+    response = client.post(
+        "/api/v1/simulation/verify",
+        content="{",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "api_version": "v1",
+        "error": {
+            "code": "invalid_verification",
+            "message": "A JSON object is required for this fixture command.",
+        },
+    }
 
 
 def test_retrieves_a_verification_record_during_the_server_lifetime() -> None:

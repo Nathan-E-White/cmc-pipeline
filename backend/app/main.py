@@ -1,6 +1,7 @@
 """HTTP boundary for the fixture-backed V1 API."""
 
 import re
+from json import JSONDecodeError
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -19,6 +20,20 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
         status_code=status_code,
         content={"api_version": "v1", "error": {"code": code, "message": message}},
     )
+
+
+async def command_request(request: Request, error_code: str) -> dict | JSONResponse:
+    try:
+        body = await request.json()
+    except JSONDecodeError:
+        body = None
+    if not isinstance(body, dict):
+        return error_response(
+            422,
+            error_code,
+            "A JSON object is required for this fixture command.",
+        )
+    return body
 
 
 @app.middleware("http")
@@ -57,9 +72,12 @@ def require_case(case_id: str):
 
 
 @app.post("/api/v1/reference-runs", status_code=202)
-def submit_reference_run(request: dict):
+async def submit_reference_run(request: Request):
+    body = await command_request(request, "invalid_reference_run")
+    if isinstance(body, JSONResponse):
+        return body
     try:
-        run = reference_runs.submit(request.get("case_id"), request.get("inputs"))
+        run = reference_runs.submit(body.get("case_id"), body.get("inputs"))
     except FixtureWorkflowError as error:
         return error_response(error.status_code, error.code, error.message)
     return {
@@ -99,10 +117,13 @@ def get_reference_run_result(run_id: str):
 
 
 @app.post("/api/v1/simulation/verify", status_code=201)
-def verify_simulation(request: dict):
+async def verify_simulation(request: Request):
+    body = await command_request(request, "invalid_verification")
+    if isinstance(body, JSONResponse):
+        return body
     try:
         run, verification = verifications.verify(
-            request.get("reference_run_id"), request.get("inputs"), request.get("observation")
+            body.get("reference_run_id"), body.get("inputs"), body.get("observation")
         )
     except FixtureWorkflowError as error:
         return error_response(error.status_code, error.code, error.message)
