@@ -1,3 +1,8 @@
+# V2 design sketch only — NOT runnable V1 infrastructure.
+#
+# This illustrative workflow has no V1 deployment authority. It contains
+# placeholder images, resource settings, and workflow details that require
+# separate V2 review before any implementation or cluster submission.
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
