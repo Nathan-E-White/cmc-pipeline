@@ -198,6 +198,87 @@ If the reference value is zero, the response instead supplies `relative_error:
 null` and a `comparison_note`; the fixture cannot silently divide by zero and
 pretend this is progress.
 
+### `POST /api/v1/reference-runs`
+
+Creates an in-memory record for a declared fixture reference run. The supplied
+`case_id` and `inputs` must exactly match a fixture case; this does not submit
+an external job or execute a solver.
+
+```json
+{
+  "case_id": "sic-sic-panel-042",
+  "inputs": {
+    "coating_shear_limit_mpa": 60.0,
+    "mechanical_load_kn": 45.0,
+    "thermal_gradient_c_per_mm": 120.0
+  }
+}
+```
+
+It returns `202 Accepted` with a `run` containing an opaque `run_id`, the
+declared `case_id`, and `status: "queued"`. The record exists only for the
+server lifetime. V1 has no cancellation, retry, or resubmission operation.
+
+### `GET /api/v1/reference-runs/{run_id}`
+
+Returns the submitted record. For the deterministic V1 fixture runner, the
+first status observation advances a queued record to `complete`; no wall-clock
+delay or background solver is implied. Unknown IDs return `404
+reference_run_not_found`.
+
+### `GET /api/v1/reference-runs/{run_id}/results`
+
+Returns the versioned representative reference result for a completed run:
+
+```json
+{
+  "result": {
+    "quantity": "j_integral_proxy",
+    "value": 12.4,
+    "units": "J/m²"
+  }
+}
+```
+
+A non-terminal record returns `409 reference_run_not_complete`; a case without
+a result fixture returns `404 artifact_not_available`. A result is numerical
+comparison evidence within its declared model, not experimental truth.
+
+### `POST /api/v1/simulation/verify`
+
+Creates an in-memory fixture comparison record against a completed reference
+run. `inputs` must match the run’s declared fixture inputs. The observation
+contains its `quantity`, numeric `value`, and `units`; it may declare
+`domain_status: "outside_declared_domain"`.
+
+```json
+{
+  "reference_run_id": "run-0001",
+  "inputs": {
+    "coating_shear_limit_mpa": 60.0,
+    "mechanical_load_kn": 45.0,
+    "thermal_gradient_c_per_mm": 120.0
+  },
+  "observation": {
+    "quantity": "j_integral_proxy",
+    "value": 12.1,
+    "units": "J/m²"
+  }
+}
+```
+
+It returns `201 Created` with an opaque `verification_id` and a fixture
+comparison whose status is `accepted`, `rejected`, or `indeterminate`.
+`accepted` and `rejected` use the declared relative-error criterion. An
+out-of-domain observation is `indeterminate`, has `relative_error: null`, and
+contains a `comparison_note`; it is not a warning-level pass.
+
+### `GET /api/v1/simulation/verifications/{verification_id}`
+
+Returns a verification record during the server lifetime. Unknown IDs return
+`404 verification_not_found`; a server restart intentionally removes these
+in-memory records.
+
 ## Error response
 
 All errors use this envelope:
@@ -221,8 +302,13 @@ is opaque and may be supplied to an operator for diagnosis.
 | 400 | `invalid_case_id` | The path identifier is syntactically invalid. |
 | 404 | `case_not_found` | No fixture case has that identifier. |
 | 404 | `artifact_not_available` | The case exists but lacks the requested fixture artifact. |
+| 404 | `reference_run_not_found` | No submitted fixture reference run has that ID. |
+| 404 | `verification_not_found` | No in-memory verification record has that ID. |
 | 405 | `method_not_allowed` | The addressed resource does not allow the method. |
 | 406 | `not_acceptable` | The client did not accept JSON. |
+| 409 | `reference_run_not_complete` | A result or verification requires a completed run. |
+| 422 | `input_mismatch` | Declared input values do not match the fixture case or run. |
+| 422 | `invalid_reference_run` / `invalid_verification` / `invalid_observation` | The command request lacks required declared fields. |
 | 500 | `fixture_integrity_error` | The fixture corpus is inconsistent or cannot be read. Do not substitute invented values. |
 
 For all 4xx and 5xx responses, clients must preserve the distinction between
