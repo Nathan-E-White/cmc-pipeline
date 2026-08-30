@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Fast contract checks for files consumed by the reference-solver image."""
 
+import json
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -78,6 +82,61 @@ def test_container_contract_exercises_the_bridged_artifact_validator() -> None:
     assert "validate_bridged_convergence_artifact.py" in source
 
 
+def test_solver_image_validates_the_reversible_case_card_before_any_solve() -> None:
+    source = DOCKERFILE.read_text(encoding="utf-8")
+    assert "validate_reversible_case.py --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json" in source
+
+
+def _validate_reversible_case(card: dict) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as directory:
+        case_card = Path(directory) / "case.json"
+        case_card.write_text(json.dumps(card), encoding="utf-8")
+        return subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "reference/python/validate_reversible_case.py"),
+                "--case-card",
+                str(case_card),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+
+def test_reversible_case_card_declares_the_synthetic_reversible_tracer() -> None:
+    case_card = json.loads(
+        (ROOT / "reference/cases/edge-cracked-plate-reversible-v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    result = _validate_reversible_case(case_card)
+    assert result.returncode == 0, result.stderr
+
+
+def test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope() -> None:
+    case_card = json.loads(
+        (ROOT / "reference/cases/edge-cracked-plate-reversible-v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    mutations = (
+        ("model", "cohesive_interface", "law", "peak_opening_mm"),
+        ("model", "cohesive_interface", "provenance", "authority"),
+        ("loading", "program", "endpoint", "mouth_opening_mm"),
+        ("declared_exclusions",),
+    )
+    invalid_values = (0.1, "measured", 0.09, ["contact"])
+    for path, value in zip(mutations, invalid_values, strict=True):
+        candidate = json.loads(json.dumps(case_card))
+        target = candidate
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        result = _validate_reversible_case(candidate)
+        assert result.returncode != 0
+
+
 if __name__ == "__main__":
     test_geo_declares_fixed_benchmark_envelope()
     test_solver_image_is_immutable_and_smoke_tests_its_contents()
@@ -87,3 +146,6 @@ if __name__ == "__main__":
     test_v2_bridged_case_declares_a_fixed_closure_traction_tracer()
     test_public_runner_declares_the_bridged_tracer_command()
     test_container_contract_exercises_the_bridged_artifact_validator()
+    test_solver_image_validates_the_reversible_case_card_before_any_solve()
+    test_reversible_case_card_declares_the_synthetic_reversible_tracer()
+    test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope()

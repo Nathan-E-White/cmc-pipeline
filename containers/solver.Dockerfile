@@ -23,6 +23,7 @@ COPY reference/cases /opt/cmc/cases
 COPY reference/python /opt/cmc/python
 COPY reference/scripts/reference-solver /opt/cmc/bin/reference-solver
 RUN chmod 0755 /opt/cmc/bin/reference-solver
+RUN python3 /opt/cmc/python/validate_reversible_case.py --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json
 RUN /opt/cmc/bin/reference-solver verify-case --output /tmp/reference-smoke
 RUN test -s /tmp/reference-smoke/mesh-audit.json \
     && test -s /tmp/reference-smoke/environment.json

@@ -1,0 +1,66 @@
+{
+  "case_id": "edge-cracked-plate-reversible-v2",
+  "status": "plane-strain-fixed-crack-reversible-cohesive-tracer",
+  "geometry": {
+    "width_mm": 100,
+    "height_mm": 200,
+    "crack_length_mm": 30,
+    "crack_y_mm": 100
+  },
+  "model": {
+    "assumption": "plane_strain",
+    "youngs_modulus_gpa": 200,
+    "poissons_ratio": 0.3,
+    "crack_growth": "fixed",
+    "cohesive_interface": {
+      "kind": "reversible-bilinear-mode-i-opening",
+      "opening_definition": "dot(u_plus-u_minus, normal_minus_to_plus)",
+      "normal_convention": "minus-lip-to-plus-lip",
+      "law": {
+        "peak_traction_mpa": 20,
+        "peak_opening_mm": 0.01,
+        "final_opening_mm": 0.1,
+        "initial_tangent_mpa_per_mm": 2000,
+        "reported_quantity": "reversible-interface-potential"
+      },
+      "provenance": {
+        "authority": "synthetic",
+        "non_calibrated": true
+      }
+    }
+  },
+  "loading": {
+    "kind": "monotonic-top-boundary-displacement",
+    "program": {
+      "boundary": "loaded",
+      "endpoint": {
+        "quantity": "mouth-opening",
+        "mouth_opening_mm": 0.1,
+        "relative_tolerance": 0.0001,
+        "crossing_policy": "bracket-and-bisect-final-displacement"
+      },
+      "newton": {
+        "relative_residual_max": 1e-08,
+        "iterations_max": 25,
+        "cutback_factor": 0.5,
+        "consecutive_cutbacks_max": 8,
+        "normalized_increment_min": 0.0001
+      }
+    }
+  },
+  "fracture_quantity": {
+    "method": "domain-integral-diagnostic",
+    "contour_radii_mm": [8, 12]
+  },
+  "declared_exclusions": [
+    "contact",
+    "compression",
+    "friction",
+    "irreversible-damage",
+    "crack-advance",
+    "fibre-interface-resolution",
+    "calibrated-material-property-claim",
+    "toughness-or-fracture-energy-claim"
+  ],
+  "claim_boundary": "Synthetic numerical tracer for one fixed, straight opened crack with a history-free reversible normal-opening law. It is not a calibrated CMC model, fibre/interface-resolved model, irreversible damage model, crack-growth model, contact or friction model, physical validation, qualification, or design authority. Its reported interface quantity is reversible interface potential, not fracture energy or toughness."
+}
