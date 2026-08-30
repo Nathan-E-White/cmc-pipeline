@@ -50,13 +50,6 @@ test("submits, observes, and renders a representative fixture reference result",
 			name: "Submit fixture reference run",
 		})
 		.click();
-	await waitFor(() =>
-		expect(screen.getByText("Queued fixture reference run")).toBeTruthy(),
-	);
-
-	screen
-		.getByRole<HTMLButtonElement>("button", { name: "Observe reference run" })
-		.click();
 	await waitFor(() => {
 		expect(screen.getByText("Complete fixture reference run")).toBeTruthy();
 		expect(screen.getByText("j_integral_proxy: 12.4 J/m²")).toBeTruthy();

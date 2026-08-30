@@ -92,6 +92,7 @@ class VerificationService:
         if (
             observation.get("quantity") != result["quantity"]
             or observation.get("units") != result["units"]
+            or isinstance(observation.get("value"), bool)
             or not isinstance(observation.get("value"), (int, float))
         ):
             raise FixtureWorkflowError(

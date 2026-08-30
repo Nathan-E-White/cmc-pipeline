@@ -26,6 +26,14 @@ export function ReferenceRunControls(props: Props) {
 		try {
 			const response = await props.client.submitReferenceRun(props.submission);
 			setRun(response.run);
+			const observed = await props.client.getReferenceRun(response.run.runId);
+			setRun(observed.run);
+			if (observed.run.status === "complete") {
+				const resultResponse = await props.client.getReferenceRunResult(
+					observed.run.runId,
+				);
+				setResult(resultResponse.result);
+			}
 		} catch {
 			setRun(undefined);
 			setError("The declared fixture reference run could not be submitted.");
@@ -60,7 +68,7 @@ export function ReferenceRunControls(props: Props) {
 			<button disabled={isSubmitting()} onClick={submit} type="button">
 				Submit fixture reference run
 			</button>
-			<Show when={run()}>
+			<Show when={run() && run()?.status !== "complete"}>
 				<button disabled={isObserving()} onClick={observe} type="button">
 					Observe reference run
 				</button>

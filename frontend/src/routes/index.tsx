@@ -62,7 +62,13 @@ function idle(inputs: SimulationInput): SimulationSnapshot {
 }
 
 function referenceRunSubmission(inputs: SimulationInput) {
-	if (inputs.architecture !== "sic_sic") return undefined;
+	if (
+		inputs.architecture !== "sic_sic" ||
+		inputs.coatingStrength !== 60 ||
+		inputs.mechanicalLoad !== 45 ||
+		inputs.thermalGradient !== 120
+	)
+		return undefined;
 	return {
 		caseId: "sic-sic-panel-042",
 		inputs: {

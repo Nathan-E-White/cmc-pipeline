@@ -102,6 +102,13 @@ def test_case_collection_rejects_unsupported_methods() -> None:
     assert response.json()["error"]["code"] == "method_not_allowed"
 
 
+def test_rejects_a_client_that_does_not_accept_json() -> None:
+    response = client.get("/api/v1/cases", headers={"Accept": "text/html"})
+
+    assert response.status_code == 406
+    assert response.json()["error"]["code"] == "not_acceptable"
+
+
 def test_allows_head_requests_for_fixture_resources() -> None:
     response = client.head("/api/v1/cases")
 
@@ -261,6 +268,27 @@ def test_marks_out_of_domain_observation_indeterminate() -> None:
     assert response.status_code == 201
     assert response.json()["verification"]["status"] == "indeterminate"
     assert response.json()["verification"]["relative_error"] is None
+
+
+def test_rejects_boolean_observation_values() -> None:
+    run_id = submit_reference_run()
+    client.get(f"/api/v1/reference-runs/{run_id}")
+
+    response = client.post(
+        "/api/v1/simulation/verify",
+        json={
+            "reference_run_id": run_id,
+            "inputs": {
+                "coating_shear_limit_mpa": 60.0,
+                "mechanical_load_kn": 45.0,
+                "thermal_gradient_c_per_mm": 120.0,
+            },
+            "observation": {"quantity": "j_integral_proxy", "value": True, "units": "J/m²"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_observation"
 
 
 def test_rejects_unknown_or_mismatched_reference_run_submissions() -> None:

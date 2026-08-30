@@ -23,6 +23,9 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
 
 @app.middleware("http")
 async def normalise_method_not_allowed(request: Request, call_next):
+    accept = request.headers.get("accept", "*/*")
+    if "application/json" not in accept and "*/*" not in accept:
+        return error_response(406, "not_acceptable", "This API serves JSON responses only.")
     response = await call_next(request)
     if response.status_code != 405:
         return response
