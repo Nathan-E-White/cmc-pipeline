@@ -97,7 +97,7 @@ spec:
   # Step 1: Pre-processing & Volumetric Meshing Task
   - name: generate-voxel-mesh
     container:
-      image: registry.spacex.corp/simulation/mesher:v2.1
+      image: registry.example.invalid/cmc/mesher:v2.1
       command: [python, /app/mesh_generator.py]
       args: ["--id", "{{inputs.parameters.cad-id}}"]
       volumeMounts:
@@ -111,7 +111,7 @@ spec:
   # Step 2: High-Fidelity Finite Element Solver Track
   - name: execute-j-integral-fem
     container:
-      image: registry.spacex.corp/simulation/fem-solver:v5.0
+      image: registry.example.invalid/cmc/fem-solver:v5.0
       command: [/opt/solvers/fem_core]
       args: ["--input-mesh", "{{inputs.parameters.mesh-artifact}}", "--output-dir", "/data/scratch/fem_results"]
       resources:
@@ -129,7 +129,7 @@ spec:
   # Step 3: Fast Neural Operator Evaluation Track
   - name: evaluate-fno-surrogate
     container:
-      image: registry.spacex.corp/ai/fno-evaluator:v1.4
+      image: registry.example.invalid/cmc/fno-evaluator:v1.4
       command: [python, /models/fno_inference.py]
       args: ["--mesh", "{{inputs.parameters.mesh-artifact}}", "--out", "/data/scratch/fno_results"]
       resources:
@@ -146,7 +146,7 @@ spec:
   # Step 4: Adjudication, Database Logging & Web Optimization
   - name: adjudicate-model-drift
     container:
-      image: registry.spacex.corp/simulation/adjudicator:v1.0
+      image: registry.example.invalid/cmc/adjudicator:v1.0
       command: [python, /app/compare_and_upload.py]
       args:
       - "--fem-src"
@@ -244,7 +244,7 @@ Now that the system topology and workflow blueprints are locked in, we can move 
   
   
 ## 1. Executive Summary & Pitch Alignment  
-This architectural blueprint outlines an end-to-end software platform designed for the **SpaceX Non-Destructive Evaluation (NDE) & Materials Software** team. The platform balances high-fidelity batch simulation mechanics with real-time interactive tooling, fulfilling the core preferences outlined in the team's job specifications. [++[1](https://talents.vaia.com/companies/spacex/materials-engineer-lab-34203944/)++]  
+This historical architectural sketch outlines an end-to-end software platform for an aerospace materials-simulation team. It is retained as exploratory material only and does not describe V1.
 ## Core Strategic Pillars  
 * **The Problem:** Traditional Finite Element Analysis (FEA) and J-Integral fracture mechanics require heavy multi-pass numerical relaxation grids, creating a turnaround bottleneck during rapid post-flight vehicle evaluations. [++[1](https://www.basenor.com/blogs/news/musk-declares-starship-heat-shield-problem-solved-after-flight-13)++, ++[2](https://www.facebook.com/groups/436711088832255/posts/915127854323907/)++]  
 * **The AI/ML Solution:** Utilizing a Fourier Neural Operator (FNO) surrogate model accelerates crack propagation boundary predictions from minutes down to milliseconds, significantly reducing inspection overhead.  
@@ -297,7 +297,7 @@ spec:
 
   - name: process-sensor-geometry
     container:
-      image: registry.spacex.corp/ndesim/mesh-util:v1.2
+      image: registry.example.invalid/ndesim/mesh-util:v1.2
       command: [python3, /app/mesh_voxelizer.py]
       args: ["--input-src", "/mnt/data/scan_source"]
       volumeMounts:
@@ -306,7 +306,7 @@ spec:
 
   - name: run-fno-inference
     container:
-      image: registry.spacex.corp/ndesim/fno-surrogate:v2.0
+      image: registry.example.invalid/ndesim/fno-surrogate:v2.0
       command: [torchrun, /app/fno_predict.py]
       volumeMounts:
       - name: simulation-shared-nvme
@@ -314,7 +314,7 @@ spec:
 
   - name: run-high-fidelity-fea
     container:
-      image: registry.spacex.corp/ndesim/fea-solver:v5.1
+      image: registry.example.invalid/ndesim/fea-solver:v5.1
       command: [/app/bin/multiscale_solver]
       volumeMounts:
       - name: simulation-shared-nvme
@@ -322,7 +322,7 @@ spec:
 
   - name: bundle-visualization-assets
     container:
-      image: registry.spacex.corp/ndesim/export-util:v1.0
+      image: registry.example.invalid/ndesim/export-util:v1.0
       command: [python3, /app/bundle_assets.py]
       volumeMounts:
       - name: simulation-shared-nvme
@@ -345,7 +345,7 @@ Once an asynchronous Argo workflow completes, it compresses the resulting stress
 A structured timeline designed for a 15-to-20 minute technical interview presentation with the NDE & Materials Software panel.  
 * **Slide 1: Title & Objective**  
     * *Heading:* Real-Time Surrogate Accelerated Modeling of CMC Fracture Interfaces.  
-    * *Talking Points:* Reorienting multiscale materials simulation around the demands of rapid vehicle reuse by pairing FNO engines with interactive web-based visualization platforms. [++[1](https://talents.vaia.com/companies/spacex/materials-engineer-lab-34203944/)++]  
+    * *Talking Points:* Reorienting multiscale materials simulation around the demands of rapid vehicle reuse by pairing FNO engines with interactive web-based visualization platforms.
 * **Slide 2: The Core Challenge: Reusability Turnaround Bottlenecks**  
     * *Heading:* Post-Flight NDE Assessment Overhead.  
     * *Talking Points:* Traditional FEA mesh relaxation limits engineering velocity. Delamination and crack-front tracking for advanced ceramics require instant evaluation to avoid fleet groundings. [++[1](https://www.basenor.com/blogs/news/musk-declares-starship-heat-shield-problem-solved-after-flight-13)++, ++[2](https://www.facebook.com/groups/436711088832255/posts/915127854323907/)++]  
@@ -354,26 +354,26 @@ A structured timeline designed for a 15-to-20 minute technical interview present
     * *Talking Points:* Explaining how Argo Workflows acts as the scalable data engine to generate massive synthetic data or compile high-fidelity verification arrays on cluster environments, while client tools remain reactive. [++[1](https://www.alphaxiv.org/abs/2603.24206)++, ++[2](https://akuity.io/blog/argo-101-what-is-argo)++]  
 * **Slide 4: Live Demo: Interactive Surrogate Canvas**  
     * *Heading:* Client-Side FNO Inference Visualization.  
-    * *Talking Points:* Pivot directly to the browser view. Adjust the thermal and shear configuration sliders live, execute the FNO simulation instantly to observe immediate crack front deformations, and highlight the compute benchmark delta. [++[1](https://talents.vaia.com/companies/spacex/materials-engineer-lab-34203944/)++]  
+    * *Talking Points:* Pivot directly to the browser view. Adjust the thermal and shear configuration sliders live, execute the FNO simulation instantly to observe immediate crack front deformations, and highlight the compute benchmark delta.
 * **Slide 5: Scaling up: Cluster Operations & Production Safety**  
     * *Heading:* Handling Storage Locality & API Protection on Kubernetes.  
     * *Talking Points:* Discussing shared NVMe persistent volume strategies to bypass data transit latencies and cluster optimization mechanics. [++[1](https://medium.com/@rudra910203/we-replaced-50-cronjobs-with-1-argo-workflow-was-it-worth-it-eedea2fe6f8f)++]  
 * **Slide 6: Conclusion & QA**  
     * *Heading:* Engineering Velocity for Multi-Planetary Exploration.  
-    * *Talking Points:* Reemphasizing the goal: empowering SpaceX structures engineers with fast, accessible spatial data analysis to build safer, rapidly reusable spaceflight hardware. [++[1](https://starship-spacex.fandom.com/wiki/Starship_Thermal_Protection_System_(TPS))++]  
+    * *Talking Points:* Reemphasizing the goal: giving structures engineers fast, accessible spatial data analysis for reusable spaceflight hardware.
   
   
   
   
   
-**SpaceX Pitch: CMC Fracture Mechanics & Interface Surrogate Simulator**  
+**CMC Fracture Mechanics & Interface Surrogate Simulator**
   
 <!DOCTYPE html>  
 <html lang="en">  
 <head>  
     <meta charset="UTF-8">  
     <meta name="viewport" content="width=device-width, initial-scale=1.0">  
-    <title>SpaceX NDE Simulation Pitch - Option C</title>  
+    <title>CMC NDE Simulation Pitch - Option C</title>
     *<!-- Authoritative CDN for Three.js -->*  
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>  
     <style>  
@@ -384,7 +384,7 @@ A structured timeline designed for a 15-to-20 minute technical interview present
             --border-color: #242c3d;  
             --text-primary: #f0f4f8;  
             --text-secondary: #8a99ad;  
-            --spacex-blue: #005288;  
+            --aerospace-blue: #005288;
             --accent-cyan: #00f0ff;  
             --accent-green: #39ff14;  
             --accent-orange: #ff9f00;  
@@ -564,8 +564,8 @@ A structured timeline designed for a 15-to-20 minute technical interview present
         }  
   
         .btn-surrogate {  
-            background-gradient: linear-gradient(135deg, var(--spacex-blue), var(--accent-cyan));  
-            background-color: var(--spacex-blue);  
+            background-gradient: linear-gradient(135deg, var(--aerospace-blue), var(--accent-cyan));
+            background-color: var(--aerospace-blue);
             color: white;  
             box-shadow: 0 4px 12px rgba(0, 82, 136, 0.3);  
             border: 1px solid rgba(0, 240, 255, 0.3);  

@@ -23,3 +23,6 @@ For local browser development, serve the explicitly fixture-backed API on port
 
 This service only serves V1 representative fixture records. Its boundaries are
 defined in [`../docs/v1-api-contract.md`](../docs/v1-api-contract.md).
+
+For the complete local workflow, frontend proxy arrangement, fixture/provenance
+limits, and V2 seam notes, see [`../docs/v1-development.md`](../docs/v1-development.md).

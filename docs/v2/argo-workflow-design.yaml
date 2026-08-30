@@ -52,7 +52,7 @@ spec:
     # Step 1: Pre-processing & Volumetric Meshing Task
     - name: generate-voxel-mesh
       container:
-        image: registry.spacex.corp/simulation/mesher:v2.1
+        image: registry.example.invalid/cmc/mesher:v2.1
         command: [python, /app/mesh_generator.py]
         args: ["--id", "{{inputs.parameters.cad-id}}"]
         volumeMounts:
@@ -66,7 +66,7 @@ spec:
     # Step 2: High-Fidelity Finite Element Solver Track
     - name: execute-j-integral-fem
       container:
-        image: registry.spacex.corp/simulation/fem-solver:v5.0
+        image: registry.example.invalid/cmc/fem-solver:v5.0
         command: [/opt/solvers/fem_core]
         args: ["--input-mesh", "{{inputs.parameters.mesh-artifact}}", "--output-dir", "/data/scratch/fem_results"]
         resources:
@@ -84,7 +84,7 @@ spec:
     # Step 3: Fast Neural Operator Evaluation Track
     - name: evaluate-fno-surrogate
       container:
-        image: registry.spacex.corp/ai/fno-evaluator:v1.4
+        image: registry.example.invalid/cmc/fno-evaluator:v1.4
         command: [python, /models/fno_inference.py]
         args: ["--mesh", "{{inputs.parameters.mesh-artifact}}", "--out", "/data/scratch/fno_results"]
         resources:
@@ -101,7 +101,7 @@ spec:
     # Step 4: Adjudication, Database Logging & Web Optimization
     - name: adjudicate-model-drift
       container:
-        image: registry.spacex.corp/simulation/adjudicator:v1.0
+        image: registry.example.invalid/cmc/adjudicator:v1.0
         command: [python, /app/compare_and_upload.py]
         args:
           - "--fem-src"

@@ -1,4 +1,31 @@
-Welcome to your new TanStack Start app!
+# CMC Pipeline frontend development
+
+Install dependencies and run the Vite/Solid application on port 3000:
+
+```sh
+bun install
+bun run dev
+```
+
+The Vite development server proxies `/api` to the local fixture API at
+`http://127.0.0.1:8000`; start it separately from `../backend` before using
+the reference-run controls.
+
+Run the frontend checks from this directory:
+
+```sh
+bun run test
+bunx tsc --noEmit
+bun run check
+bun run build
+```
+
+The UI renders representative V1 fixture data and its deterministic surrogate
+fixture observation. It does not run an ONNX model, a solver, or a qualified
+engineering analysis. See [`../docs/v1-development.md`](../docs/v1-development.md)
+for the complete boundary and future-adapter notes.
+
+## Starter-framework reference
 
 # Getting Started
 
