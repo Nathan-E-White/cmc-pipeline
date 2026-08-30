@@ -1,0 +1,254 @@
+%! Author = nathanwhite
+%! Date = 8/29/26
+
+% Preamble
+\documentclass[11pt]{article}
+
+% Packages
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage[hidelinks]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+
+% Document
+\begin{document}
+
+\title{A Multiscale CMC-Fracture Problem:\\Motivation, Mathematical Statement, and Methodological Basis}
+\author{}
+\date{}
+\maketitle
+
+\begin{abstract}
+Ceramic-matrix composites (CMCs) offer low density, high-temperature capability,
+and damage tolerance, but their matrix-cracking response depends on geometry,
+material architecture, interfaces, loading, and environment. This note defines
+a bounded computational problem: evaluate a fracture-driving quantity and its
+associated fields with a finite-element (FE) model, learn a fast surrogate for
+the same parameterized map, and accept its use only when it agrees with the
+reference calculation under predeclared criteria.
+\end{abstract}
+
+\section{Motivation}
+Continuous-fiber CMCs are intended to avoid the abrupt tensile failure of
+monolithic ceramics.  A suitably compliant interphase can deflect matrix cracks,
+permit interface debonding, and leave fibers bridging the crack faces.  The
+material can then accumulate distributed damage rather than concentrating all
+energy at one unstable crack.  The compensating difficulty is that the response
+depends on constituent properties, fiber architecture, interface condition,
+defects, temperature history, and the local multiaxial stress field.  NASA
+reports on SiC/SiC composites identify matrix cracking, oxidation, creep, and
+fiber degradation as coupled life-relevant phenomena
+\citep{nasacmcbehavior,nasasic1200}.
+
+For an analyst, a CAD geometry is consequently not a material model.  It must be
+paired with a declared architecture, constitutive and fracture laws, boundary
+conditions, loading history, and mesh.  Its results must retain units,
+discretization, solver settings, and material parameters.  Otherwise two outputs
+called ``fracture'' can answer different physical questions.  This distinction is
+unromantic, but a simulation pipeline does not become credible simply because its
+containers are arranged in a directed acyclic graph.
+
+The problem here is deliberately narrower than complete service-life prediction.
+For a family of CMC structures, estimate displacement and stress fields near a
+crack or notch and a fracture-driving quantity represented by the $J$-integral.
+In its original elastic setting, $J$ is a path-independent measure of energy
+release rate for crack advance \citep{rice1968}.  In a heterogeneous,
+bridged, nonlinear, or dissipative CMC, path independence and equivalence to a
+unique material toughness require additional assumptions.  Thus $J$ is an
+informative target and diagnostic, not a scalar that makes the microphysics go
+away.
+
+High-fidelity FE analysis gives a defensible reference route: it resolves the
+specified geometry and boundary conditions, exposes constitutive assumptions,
+and permits mesh and contour-convergence studies.  Its cost becomes onerous in a
+study spanning geometries, thermal states, material parameters, and loads.  A
+neural operator is attractive because it learns a map between input functions and
+solution fields, rather than just a finite-dimensional regression at one grid
+resolution \citep{kovachki2023}.  The Fourier neural operator (FNO) uses
+Fourier-space kernel parameterization and has demonstrated rapid PDE-solution
+surrogates on benchmark families \citep{li2021fno}.
+
+Speed is not evidence.  A model trained on FE cases can interpolate within its
+corpus yet fail on a changed notch topology, fiber orientation, thermal state, or
+crack configuration.  Fracture quantities are especially unforgiving: a modest
+local field error can change a contour integral or a threshold decision.  The FE
+track must therefore remain a comparison authority for selected cases.  The
+system should record disagreement, quality checks, and an out-of-distribution
+indicator, then refuse a surrogate screening result when the stated limits are
+not met.  That refusal is a useful result, not a software exception wearing a
+false moustache.
+
+This has consequences for how the multiscale problem is framed.  The word
+``multiscale'' should not suggest that a component calculation has automatically
+resolved the fiber, interface, pore, matrix grain, and crack process zone at
+their physical scales.  It means that information from more than one scale is
+represented deliberately.  A component-scale FE model may use homogenized
+anisotropic properties, an interface law informed by smaller-scale experiments,
+and a crack-driving functional evaluated at the structural scale.  Each
+abstraction has a regime of validity.  In particular, the parameters in an
+effective law should be regarded as calibrated model inputs, not as immutable
+properties that remain correct after changes in temperature, environmental
+exposure, architecture, or manufacturing route.
+
+The scale separation also explains why the choice of output matters.  A scalar
+such as $J$ is valuable because it supports comparison across a parameter sweep,
+but it is not sufficient to diagnose every failure mechanism.  A result viewer
+should preserve the displacement, stress, and damage fields that explain why a
+particular value was obtained.  A high $J$ near one region may be caused by a
+geometric stress concentrator, a boundary-condition artifact, an inadequate mesh,
+or a genuine material-interface effect.  Conflating those possibilities into a
+single traffic-light label would be efficient in the same sense that a compass is
+an efficient substitute for a map.
+
+The proposed FE--surrogate pairing is therefore best understood as an
+experiment-design mechanism.  The expensive model supplies selected reference
+cases across the variables that define the intended domain of use.  The fast
+model explores between those cases and highlights candidates that merit renewed
+resolution.  This permits adaptive allocation of computational effort, but it
+also requires discipline in data splitting and reporting.  Randomly withholding
+individual voxels or repeated perturbations of one geometry is not evidence that
+a surrogate can generalize to a new component family.  The held-out cases should
+match the actual claim: unseen loads for load interpolation, unseen geometries
+for geometric generalization, or unseen material states for material
+generalization.  These are different questions and usually have different error
+profiles.
+
+Finally, the workflow has a useful engineering boundary.  Its near-term purpose
+is comparative screening and model development, not automated release of a
+fracture-critical design.  To cross that boundary would require model-form
+verification, calibration, experimental validation in the relevant regime,
+uncertainty treatment, and configuration control of both numerical and learned
+models.  Those activities are expensive because they replace attractive diagrams
+with accountable evidence.  They are also the activities that make a prediction
+worth believing.  The formulation below is intentionally arranged so that this
+later evidence can attach to explicit inputs, outputs, assumptions, and
+acceptance decisions.
+
+\section{Problem to be solved}
+
+Let $\Omega(\theta)\subset\mathbb{R}^3$ be a component domain obtained from
+geometry parameters $\theta$.  Let $\Gamma_u$, $\Gamma_t$, and $\Gamma_c$
+denote displacement, traction, and crack/damage boundaries.  A simulation case
+is
+\begin{equation}
+ x=\bigl(\Omega(\theta),\mathcal{A},\mathcal{M},b,\ell,\tau\bigr),
+\end{equation}
+
+where $\mathcal{A}$ is the modeled material architecture, $\mathcal{M}$ its
+constitutive/fracture parameters, $b$ boundary data, $\ell$ a load history, and
+$\tau$ the analysis increment.
+
+Its required output is
+
+\begin{equation}
+ y=\bigl(\bm{u},\bm{\sigma},\bm{\varepsilon},d,J;q\bigr),
+\end{equation}
+
+where the first four terms are displacement, stress, strain, and a declared
+damage/crack state; $J$ is a fracture quantity; and $q$ records provenance,
+units, mesh, model/solver versions, tolerances, and convergence status.
+
+For a quasistatic reference model, seek $\bm{u}\in\mathcal{V}$ such that
+\begin{equation}
+ \int_{\Omega}\bm{\varepsilon}(\bm{v}):
+ \bm{\sigma}(\bm{u},d,\mathcal{M})\,d\Omega
+ =\int_{\Omega}\bm{v}\cdot\bm{f}\,d\Omega+
+ \int_{\Gamma_t}\bm{v}\cdot\bar{\bm{t}}\,d\Gamma
+ \quad\forall\bm{v}\in\mathcal{V}_0,
+ \label{eq:equilibrium}
+\end{equation}
+with $\bm{u}=\bar{\bm{u}}$ on $\Gamma_u$.  This equilibrium statement is not
+yet a complete CMC model.  An implementation must state its kinematics,
+anisotropy, thermal dependence, interface law, and damage evolution.  For
+example, an energy-based damage model enforces $\dot d\geq0$; a cohesive model
+instead introduces a traction--separation law on an internal surface.  They are
+alternative hypotheses, not interchangeable labels.
+
+For a contour $\Gamma$ surrounding a crack tip with local propagation direction
+$x_1$, write
+\begin{equation}
+ J=\int_{\Gamma}\left(Wn_1-\sigma_{ij}n_j
+ \frac{\partial u_i}{\partial x_1}\right)ds,
+ \qquad W=\int_0^{\bm{\varepsilon}}\bm{\sigma}:d\bm{\varepsilon}.
+ \label{eq:j}
+\end{equation}
+In the CMC application, every reported value must identify contour/domain,
+crack-front direction, treatment of inhomogeneity and dissipation, and mesh and
+contour convergence.  This is what makes $J$ auditable rather than merely
+numerically expensive.
+
+Denote the reference operator by $\mathcal{S}:x\mapsto y_{\mathrm{FE}}$.  Given
+a corpus $\mathcal{D}_{\mathrm{train}}$ of verified reference cases, train an
+FNO surrogate $\widehat{\mathcal{S}}_\phi$ to approximate selected fields and
+functionals.  A schematic FNO layer is
+\begin{equation}
+ \bm{v}_{k+1}(\bm{r})=\sigma\!\left(W_k\bm{v}_k(\bm{r})+
+ \mathcal{F}^{-1}\!\left(R_k\mathcal{F}[\bm{v}_k]\right)(\bm{r})\right),
+\end{equation}
+with local mixing $W_k$, retained Fourier modes $R_k$, and transform
+$\mathcal{F}$.  Inputs must have a declared common raster or geometry-aware
+encoding; FFT-based processing does not make an arbitrary unstructured FE mesh
+into a regular voxel field.
+
+The training loss should weight the outputs used in the actual decision:
+\begin{equation}
+ \min_\phi\;\mathbb{E}_{(x,y)\sim\mathcal{D}_{\mathrm{train}}}
+ \left[\alpha\frac{\|\widehat{\bm{u}}-\bm{u}\|_2^2}{\|\bm{u}\|_2^2+\epsilon}
+ +\beta\frac{\|\widehat{\bm{\sigma}}-\bm{\sigma}\|_2^2}{\|\bm{\sigma}\|_2^2+\epsilon}
+ +\gamma\frac{|\widehat{J}-J|}{|J|+\epsilon}\right].
+ \label{eq:loss}
+\end{equation}
+Held-out evaluation must separate the physical generalization claim---new loads,
+geometries, or material states---rather than neighboring records from the same
+run.  A new case is accepted for screening only when field and $J$ errors,
+numerical-quality checks, and an out-of-distribution criterion satisfy
+predeclared limits.  Otherwise it is routed to FE and labeled \emph{indeterminate}.
+
+\section{Brief literature review and methodological position}
+
+The mechanics foundation begins with energy-based fracture measures.  Rice
+introduced the path-independent integral behind Equation~\eqref{eq:j}
+\citep{rice1968}.  For CMCs, Marshall and Evans documented multiple matrix
+cracking, fiber fracture, and pull-out, while Marshall, Cox, and Evans modeled
+the role of fiber-bridging closure tractions in matrix cracking
+\citep{marshallEvans1985,marshallCoxEvans1985}.  Budiansky, Hutchinson, and
+Evans distinguish interface regimes relevant to matrix fracture
+\citep{budiansky1986}; Moran and Shih provide the domain-integral formulation
+used naturally in finite-element evaluation \citep{moranShih1987}.  Together,
+this literature argues for explicit crack/interface assumptions rather than a
+single, context-free toughness number.
+
+FE is the reference mechanism here because it makes governing assumptions and
+numerical sensitivity inspectable.  Reference does not mean physical truth:
+calibration, experimental validation, and uncertainty evidence are still needed
+before any result supports an allowable or life claim.  The surrogate literature
+offers a complementary route.  Neural operators formalize maps between function
+spaces \citep{kovachki2023}; FNOs are a Fourier-parameterized practical member
+of that family \citep{li2021fno}.  Geo-FNO extends the approach toward irregular
+geometries \citep{li2022geofno}.  Neither result establishes accuracy for CMC
+crack fields or $J$; that must be measured against the declared FE corpus.
+
+The methodological position is therefore conservative.  The surrogate is an
+acceleration layer with a bounded empirical domain of use.  It can prioritize
+designs and make field-level exploration cheaper, but it may not silently
+replace the reference calculation.  Its comparison stage is an adjudication
+record, not validation unless independent physical evidence has been supplied.
+
+\section{Scope and next evidence}
+
+The immediate scientific deliverable is one reproducible benchmark corpus for a
+specified CMC architecture and fracture configuration.  Every case should carry
+the input contract, reference fields, $J$ evaluation details, mesh/convergence
+evidence, and stable artifact identity.
+
+Only then can accuracy, speedup, and
+refusal behavior be measured.
+
+Temperature dependence, interface degradation,
+transient loads, and richer microstructure are appropriate later extensions, but
+each expands the physical claim and requires fresh verification and validation.
+
+\bibliographystyle{plainnat}
+\bibliography{theory}
+
+\end{document}

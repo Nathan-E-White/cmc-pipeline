@@ -1,0 +1,108 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: cmc-fracture-pipeline-
+  namespace: simulation-core
+spec:
+  entrypoint: cmc-multiscale-dag
+  volumeClaimTemplates:
+    - metadata:
+        name: shared-scratchpad
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 100Gi
+        storageClassName: nvme-fast-scratch
+
+  templates:
+    - name: cmc-multiscale-dag
+      dag:
+        tasks:
+          - name: mesh-generation
+            template: generate-voxel-mesh
+            arguments:
+              parameters: [{name: "cad-id", value: "{{workflow.parameters.cad-id}} Erin"}]
+
+          - name: parallel-fem-solver
+            dependencies: [mesh-generation]
+            template: execute-j-integral-fem
+            arguments:
+              parameters: [{name: "mesh-artifact", value: "{{tasks.mesh-generation.outputs.parameters.mesh-path}}"}]
+
+          - name: surrogate-inference
+            dependencies: [mesh-generation]
+            template: evaluate-fno-surrogate
+            arguments:
+              parameters: [{name: "mesh-artifact", value: "{{tasks.mesh-generation.outputs.parameters.mesh-path}}"}]
+
+          - name: evaluate-accuracy-drift
+            dependencies: [parallel-fem-solver, surrogate-inference]
+            template: adjudicate-model-drift
+            arguments:
+              parameters:
+                - {name: "fem-data", value: "{{tasks.parallel-fem-solver.outputs.parameters.results-path}}"}
+                - {name: "fno-data", value: "{{tasks.surrogate-inference.outputs.parameters.results-path}}"}
+
+    # Step 1: Pre-processing & Volumetric Meshing Task
+    - name: generate-voxel-mesh
+      container:
+        image: registry.spacex.corp/simulation/mesher:v2.1
+        command: [python, /app/mesh_generator.py]
+        args: ["--id", "{{inputs.parameters.cad-id}}"]
+        volumeMounts:
+          - name: shared-scratchpad
+            mountPath: /data/scratch
+      outputs:
+        parameters:
+          - name: mesh-path
+            valueFrom: {path: /data/scratch/mesh_output_path.txt}
+
+    # Step 2: High-Fidelity Finite Element Solver Track
+    - name: execute-j-integral-fem
+      container:
+        image: registry.spacex.corp/simulation/fem-solver:v5.0
+        command: [/opt/solvers/fem_core]
+        args: ["--input-mesh", "{{inputs.parameters.mesh-artifact}}", "--output-dir", "/data/scratch/fem_results"]
+        resources:
+          requests:
+            cpu: "16"
+            memory: "64Gi"
+        volumeMounts:
+          - name: shared-scratchpad
+            mountPath: /data/scratch
+      outputs:
+        parameters:
+          - name: results-path
+            value: "/data/scratch/fem_results/matrix_fields.bin"
+
+    # Step 3: Fast Neural Operator Evaluation Track
+    - name: evaluate-fno-surrogate
+      container:
+        image: registry.spacex.corp/ai/fno-evaluator:v1.4
+        command: [python, /models/fno_inference.py]
+        args: ["--mesh", "{{inputs.parameters.mesh-artifact}}", "--out", "/data/scratch/fno_results"]
+        resources:
+          limits:
+            ://nvidia.com: "1"
+        volumeMounts:
+          - name: shared-scratchpad
+            mountPath: /data/scratch
+      outputs:
+        parameters:
+          - name: results-path
+            value: "/data/scratch/fno_results/prediction_fields.onnx_tensor"
+
+    # Step 4: Adjudication, Database Logging & Web Optimization
+    - name: adjudicate-model-drift
+      container:
+        image: registry.spacex.corp/simulation/adjudicator:v1.0
+        command: [python, /app/compare_and_upload.py]
+        args:
+          - "--fem-src"
+          - "{{inputs.parameters.fem-data}}"
+          - "--fno-src"
+          - "{{inputs.parameters.fno-data}}"
+        volumeMounts:
+          - name: shared-scratchpad
+            mountPath: /data/scratch
