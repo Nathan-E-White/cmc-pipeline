@@ -29,7 +29,11 @@ def test_lists_representative_fixture_cases() -> None:
     assert payload["api_version"] == "v1"
     assert payload["fixture"]["corpus_id"] == "v1-demo-2026-08"
     assert payload["provenance"]["source_kind"] == "fixture"
-    assert payload["cases"][0]["case_id"] == "sic-sic-panel-042"
+    assert [(case["case_id"], case["architecture"]) for case in payload["cases"]] == [
+        ("sic-sic-panel-042", "sic_sic"),
+        ("c-sic-panel-017", "c_sic"),
+        ("layered-tufroc-panel-009", "layered_tufroc"),
+    ]
 
 
 def test_returns_declared_fixture_case_metadata() -> None:
@@ -134,6 +138,23 @@ def test_submits_a_known_fixture_reference_run() -> None:
     assert payload["run"]["status"] == "queued"
     assert payload["run"]["case_id"] == "sic-sic-panel-042"
     assert payload["fixture"]["corpus_id"] == "v1-demo-2026-08"
+
+
+def test_submits_the_layered_tufroc_fixture_reference_run() -> None:
+    response = client.post(
+        "/api/v1/reference-runs",
+        json={
+            "case_id": "layered-tufroc-panel-009",
+            "inputs": {
+                "coating_shear_limit_mpa": 35.0,
+                "mechanical_load_kn": 52.0,
+                "thermal_gradient_c_per_mm": 175.0,
+            },
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["run"]["case_id"] == "layered-tufroc-panel-009"
 
 
 def test_normalises_non_object_reference_run_commands_to_the_declared_error_envelope() -> None:

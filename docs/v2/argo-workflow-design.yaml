@@ -89,7 +89,7 @@ spec:
         args: ["--mesh", "{{inputs.parameters.mesh-artifact}}", "--out", "/data/scratch/fno_results"]
         resources:
           limits:
-            ://nvidia.com: "1"
+            example.invalid/gpu: "1"
         volumeMounts:
           - name: shared-scratchpad
             mountPath: /data/scratch

@@ -42,6 +42,31 @@ CASES = {
             "thermal_gradient_c_per_mm": 95.0,
         },
     },
+    "layered-tufroc-panel-009": {
+        "label": "Layered fibrous insulation panel 009",
+        "architecture": "layered_tufroc",
+        "revision": "1",
+        "inputs": {
+            "coating_shear_limit_mpa": 35.0,
+            "mechanical_load_kn": 52.0,
+            "thermal_gradient_c_per_mm": 175.0,
+        },
+        "mesh": {
+            "coordinate_system": "case_local_cartesian_mm",
+            "node_count": 310000,
+            "vertex_positions_mm": [-1.0, 0.0, 0.0, -0.96, 0.08, -0.03],
+            "fiber_indices": [[0, 1, 2]],
+        },
+        "adjudication": {
+            "status": "accepted",
+            "quantity": "j_integral_proxy",
+            "reference_value": 9.8,
+            "surrogate_value": 10.0,
+            "relative_error": 0.0204,
+            "acceptance_criterion": {"maximum_relative_error": 0.05},
+            "units": "J/m²",
+        },
+    },
 }
 
 
