@@ -1,0 +1,11 @@
+Point(1) = {0, 0, 0, 10};
+Point(2) = {100, 0, 0, 10};
+Point(3) = {100, 200, 0, 10};
+Point(4) = {0, 200, 0, 10};
+Line(1) = {1, 2};
+Line(2) = {2, 3};
+Line(3) = {3, 4};
+Line(4) = {4, 1};
+Curve Loop(1) = {1, 2, 3, 4};
+Plane Surface(1) = {1};
+Physical Surface("plate", 1) = {1};

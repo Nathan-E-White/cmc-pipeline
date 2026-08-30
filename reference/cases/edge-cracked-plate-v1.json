@@ -1,0 +1,27 @@
+{
+  "case_id": "edge-cracked-plate-v1",
+  "status": "mesh-audit-only",
+  "geometry": {
+    "width_mm": 100,
+    "height_mm": 200,
+    "crack_length_mm": 30,
+    "crack_y_mm": 100
+  },
+  "model": {
+    "assumption": "plane_strain",
+    "youngs_modulus_gpa": 200,
+    "poissons_ratio": 0.3,
+    "nominal_traction_mpa": 100
+  },
+  "mesh_levels": [
+    {"near_tip_mm": 2, "far_field_mm": 10},
+    {"near_tip_mm": 1, "far_field_mm": 5},
+    {"near_tip_mm": 0.5, "far_field_mm": 2.5}
+  ],
+  "analytical_authority": {
+    "source": "NASA edge-cracked plate in tension correction",
+    "a_over_w": 0.3,
+    "status": "planned-for-reference-solution-slice"
+  },
+  "claim_boundary": "Fixed numerical benchmark values, not CMC calibration. The current container generates and audits a mesh only; it does not execute a reference solution or report J."
+}

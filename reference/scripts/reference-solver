@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "usage: reference-solver verify-case --output <directory>" >&2
+  exit 64
+}
+
+[[ "${1:-}" == "verify-case" ]] || usage
+shift
+[[ "${1:-}" == "--output" && -n "${2:-}" ]] || usage
+output_dir="$2"
+mkdir -p "${output_dir}"
+
+mesh_path="${output_dir}/edge-cracked-plate-v1.msh"
+gmsh /opt/cmc/cases/edge-cracked-plate-v1.geo -2 -format msh41 -o "${mesh_path}" \
+  -setnumber near_size 2 -setnumber far_size 10
+/usr/local/bin/mesh-audit "${mesh_path}" "${output_dir}/mesh-audit.json"
+
+python3 - "${output_dir}/environment.json" <<'PY'
+import json
+import subprocess
+import sys
+
+import dolfinx
+
+payload = {
+    "gmsh_version": subprocess.check_output(["gmsh", "-version"], text=True).strip(),
+    "dolfinx_version": getattr(dolfinx, "__version__", "unknown"),
+    "case_id": "edge-cracked-plate-v1",
+    "claim_boundary": "Meshing and audit only; no reference solution has been executed.",
+}
+with open(sys.argv[1], "w", encoding="utf-8") as stream:
+    json.dump(payload, stream, indent=2, sort_keys=True)
+    stream.write("\n")
+PY
