@@ -42,6 +42,29 @@ export type ReferenceRunResultResponse = {
 	result: ReferenceRunResult;
 };
 
+export type SurrogateObservation = {
+	quantity: string;
+	value: number;
+	units: string;
+	domainStatus?: "outside_declared_domain";
+};
+
+export type FixtureVerification = {
+	verificationId: string;
+	status: "accepted" | "rejected" | "indeterminate";
+	quantity: string;
+	referenceValue: number;
+	surrogateValue: number;
+	relativeError: number | null;
+	units: string;
+};
+
+export type FixtureVerificationResponse = {
+	fixture: FixtureDescriptor;
+	provenance: FixtureProvenance & { claimBoundary: string };
+	verification: FixtureVerification;
+};
+
 export type HttpRequest = {
 	method: "GET" | "POST";
 	path: string;
@@ -63,6 +86,11 @@ export type SimulationClient = {
 	) => Promise<ReferenceRunSubmissionResponse>;
 	getReferenceRun: (runId: string) => Promise<ReferenceRunSubmissionResponse>;
 	getReferenceRunResult: (runId: string) => Promise<ReferenceRunResultResponse>;
+	verifySurrogateObservation: (
+		referenceRunId: string,
+		submission: ReferenceRunSubmission,
+		observation: SurrogateObservation,
+	) => Promise<FixtureVerificationResponse>;
 };
 
 export class SimulationApiError extends Error {
@@ -128,6 +156,38 @@ export function createSimulationClient(
 				);
 			}
 			return parseReferenceRunResult(response.body);
+		},
+		verifySurrogateObservation: async (
+			referenceRunId,
+			submission,
+			observation,
+		) => {
+			const response = await transport.request({
+				method: "POST",
+				path: "/api/v1/simulation/verify",
+				body: {
+					reference_run_id: referenceRunId,
+					inputs: {
+						coating_shear_limit_mpa: submission.inputs.coatingShearLimitMpa,
+						mechanical_load_kn: submission.inputs.mechanicalLoadKn,
+						thermal_gradient_c_per_mm: submission.inputs.thermalGradientCPerMm,
+					},
+					observation: {
+						quantity: observation.quantity,
+						value: observation.value,
+						units: observation.units,
+						...(observation.domainStatus
+							? { domain_status: observation.domainStatus }
+							: {}),
+					},
+				},
+			});
+			if (response.status !== 201) {
+				throw new SimulationApiError(
+					"Fixture surrogate comparison was unavailable.",
+				);
+			}
+			return parseFixtureVerification(response.body);
 		},
 	};
 }
@@ -224,12 +284,76 @@ function parseReferenceRunResult(body: unknown): ReferenceRunResultResponse {
 	};
 }
 
+function parseFixtureVerification(body: unknown): FixtureVerificationResponse {
+	if (
+		!isRecord(body) ||
+		body.api_version !== "v1" ||
+		!isRecord(body.fixture) ||
+		!isRecord(body.provenance) ||
+		!isRecord(body.verification)
+	) {
+		throw new SimulationApiError(
+			"Fixture verification response was malformed.",
+		);
+	}
+	const { corpus_id: corpusId, kind } = body.fixture;
+	const { claim_boundary: claimBoundary, source_kind: sourceKind } =
+		body.provenance;
+	const {
+		quantity,
+		reference_value: referenceValue,
+		relative_error: relativeError,
+		status,
+		surrogate_value: surrogateValue,
+		units,
+		verification_id: verificationId,
+	} = body.verification;
+	if (
+		typeof corpusId !== "string" ||
+		kind !== "representative" ||
+		sourceKind !== "fixture" ||
+		typeof claimBoundary !== "string" ||
+		typeof verificationId !== "string" ||
+		!isVerificationStatus(status) ||
+		typeof quantity !== "string" ||
+		typeof referenceValue !== "number" ||
+		typeof surrogateValue !== "number" ||
+		(relativeError !== null && typeof relativeError !== "number") ||
+		typeof units !== "string"
+	) {
+		throw new SimulationApiError(
+			"Fixture verification response was malformed.",
+		);
+	}
+	return {
+		fixture: { corpusId, kind },
+		provenance: { claimBoundary, sourceKind },
+		verification: {
+			quantity,
+			referenceValue,
+			relativeError,
+			status,
+			surrogateValue,
+			units,
+			verificationId,
+		},
+	};
+}
+
 function isReferenceRunStatus(value: unknown): value is ReferenceRun["status"] {
 	return (
 		value === "queued" ||
 		value === "running" ||
 		value === "complete" ||
 		value === "failed"
+	);
+}
+
+function isVerificationStatus(
+	value: unknown,
+): value is FixtureVerification["status"] {
+	return (
+		value === "accepted" || value === "rejected" || value === "indeterminate"
 	);
 }
 

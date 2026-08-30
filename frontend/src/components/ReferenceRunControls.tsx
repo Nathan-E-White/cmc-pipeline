@@ -1,6 +1,8 @@
 import { createSignal, Show } from "solid-js";
 
+import { declaredFixtureSurrogateObservation } from "../fixture-surrogate";
 import type {
+	FixtureVerification,
 	ReferenceRun,
 	ReferenceRunResult,
 	ReferenceRunSubmission,
@@ -15,13 +17,29 @@ type Props = {
 export function ReferenceRunControls(props: Props) {
 	const [run, setRun] = createSignal<ReferenceRun>();
 	const [result, setResult] = createSignal<ReferenceRunResult>();
+	const [verification, setVerification] = createSignal<FixtureVerification>();
+	const [verificationBoundary, setVerificationBoundary] =
+		createSignal<string>();
 	const [error, setError] = createSignal<string>();
 	const [isSubmitting, setIsSubmitting] = createSignal(false);
 	const [isObserving, setIsObserving] = createSignal(false);
+	const loadCompletedRunEvidence = async (runId: string) => {
+		const resultResponse = await props.client.getReferenceRunResult(runId);
+		setResult(resultResponse.result);
+		const verificationResponse = await props.client.verifySurrogateObservation(
+			runId,
+			props.submission,
+			declaredFixtureSurrogateObservation(),
+		);
+		setVerification(verificationResponse.verification);
+		setVerificationBoundary(verificationResponse.provenance.claimBoundary);
+	};
 
 	const submit = async () => {
 		setError(undefined);
 		setResult(undefined);
+		setVerification(undefined);
+		setVerificationBoundary(undefined);
 		setIsSubmitting(true);
 		try {
 			const response = await props.client.submitReferenceRun(props.submission);
@@ -29,10 +47,7 @@ export function ReferenceRunControls(props: Props) {
 			const observed = await props.client.getReferenceRun(response.run.runId);
 			setRun(observed.run);
 			if (observed.run.status === "complete") {
-				const resultResponse = await props.client.getReferenceRunResult(
-					observed.run.runId,
-				);
-				setResult(resultResponse.result);
+				await loadCompletedRunEvidence(observed.run.runId);
 			}
 		} catch {
 			setRun(undefined);
@@ -51,10 +66,7 @@ export function ReferenceRunControls(props: Props) {
 			const response = await props.client.getReferenceRun(activeRun.runId);
 			setRun(response.run);
 			if (response.run.status === "complete") {
-				const resultResponse = await props.client.getReferenceRunResult(
-					response.run.runId,
-				);
-				setResult(resultResponse.result);
+				await loadCompletedRunEvidence(response.run.runId);
 			}
 		} catch {
 			setError("The fixture reference-run state could not be observed.");
@@ -81,9 +93,23 @@ export function ReferenceRunControls(props: Props) {
 					<p>{`${referenceResult().quantity}: ${referenceResult().value} ${referenceResult().units}`}</p>
 				)}
 			</Show>
+			<Show when={verification()}>
+				{(fixtureVerification) => (
+					<p>{formatVerificationStatus(fixtureVerification().status)}</p>
+				)}
+			</Show>
+			<Show when={verificationBoundary()}>
+				{(boundary) => <p>{boundary()}</p>}
+			</Show>
 			<Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
 		</section>
 	);
+}
+
+function formatVerificationStatus(
+	status: FixtureVerification["status"],
+): string {
+	return `${status[0].toUpperCase()}${status.slice(1)} fixture comparison`;
 }
 
 function formatRunStatus(status: ReferenceRun["status"]): string {
