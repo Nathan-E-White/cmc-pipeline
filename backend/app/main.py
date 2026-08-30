@@ -1,4 +1,4 @@
-"""HTTP boundary for the read-only V1 fixture corpus."""
+"""HTTP boundary for the fixture-backed V1 API."""
 
 import re
 
@@ -19,17 +19,25 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
 
 
 @app.middleware("http")
-async def enforce_read_only_contract(request: Request, call_next):
+async def normalise_method_not_allowed(request: Request, call_next):
     response = await call_next(request)
     if response.status_code != 405:
         return response
+    headers = {}
+    if allow := response.headers.get("allow"):
+        if allow == "GET":
+            allow = "GET, HEAD"
+        headers["Allow"] = allow
     return JSONResponse(
         status_code=405,
         content={
             "api_version": "v1",
-            "error": {"code": "method_not_allowed", "message": "V1 is read-only."},
+            "error": {
+                "code": "method_not_allowed",
+                "message": "This resource does not allow the requested method.",
+            },
         },
-        headers={"Allow": "GET, HEAD"},
+        headers=headers,
     )
 
 

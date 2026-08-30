@@ -78,7 +78,7 @@ def test_distinguishes_unavailable_mesh_from_unknown_case() -> None:
     assert response.json()["error"]["code"] == "artifact_not_available"
 
 
-def test_rejects_non_get_requests_with_declared_allow_header() -> None:
+def test_case_collection_rejects_unsupported_methods() -> None:
     response = client.post("/api/v1/cases")
 
     assert response.status_code == 405

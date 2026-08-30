@@ -4,9 +4,11 @@
 
 This document defines the V1 HTTP/JSON boundary for the CMC Fracture Pipeline.
 V1 serves a small, versioned fixture corpus so that the UI and the later
-backend adapter can be developed against stable data. It does **not** submit
-jobs, run a finite-element solver, load a learned model, or establish a
-material or flight-readiness claim. Those activities require a separately
+backend adapter can be developed against stable data. Its retrieval routes
+serve fixture data; its declared fixture workflow commands may create only
+in-memory fixture run and verification records. V1 does **not** invoke an
+external job, run a finite-element solver, load a learned model, or establish
+a material or flight-readiness claim. Those activities require a separately
 reviewed execution and evidence path; the Argo file is explicitly a
 [non-runnable V2 design](v2/argo-workflow-design.yaml).
 
@@ -25,8 +27,10 @@ structural prediction.
 - Every successful response contains `api_version: "v1"`, a `fixture` object,
   and a `provenance` object. Clients should display the supplied labels rather
   than manufacture stronger claims from the numeric fields.
-- V1 is read-only. A request method other than `GET` or `HEAD` returns
-  `405 method_not_allowed` and an `Allow: GET, HEAD` header.
+- The case-retrieval routes in this document allow `GET` and `HEAD`; an
+  unsupported method returns `405 method_not_allowed` with that route's
+  `Allow` header. Declared fixture workflow commands use `POST` and describe
+  their own request and response semantics.
 - This specification defines payload shape and semantics. It does not yet
   authorize CORS, authentication, caching policy, persistence, or a deployed
   service.
@@ -217,7 +221,7 @@ is opaque and may be supplied to an operator for diagnosis.
 | 400 | `invalid_case_id` | The path identifier is syntactically invalid. |
 | 404 | `case_not_found` | No fixture case has that identifier. |
 | 404 | `artifact_not_available` | The case exists but lacks the requested fixture artifact. |
-| 405 | `method_not_allowed` | V1 is read-only. |
+| 405 | `method_not_allowed` | The addressed resource does not allow the method. |
 | 406 | `not_acceptable` | The client did not accept JSON. |
 | 500 | `fixture_integrity_error` | The fixture corpus is inconsistent or cannot be read. Do not substitute invented values. |
 
