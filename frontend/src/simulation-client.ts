@@ -12,7 +12,7 @@ export type ReferenceRunSubmission = {
 export type ReferenceRun = {
 	runId: string;
 	caseId: string;
-	status: "queued";
+	status: "queued" | "running" | "complete" | "failed";
 };
 
 export type FixtureDescriptor = {
@@ -30,8 +30,20 @@ export type ReferenceRunSubmissionResponse = {
 	run: ReferenceRun;
 };
 
+export type ReferenceRunResult = {
+	quantity: string;
+	value: number;
+	units: string;
+};
+
+export type ReferenceRunResultResponse = {
+	fixture: FixtureDescriptor;
+	provenance: FixtureProvenance;
+	result: ReferenceRunResult;
+};
+
 export type HttpRequest = {
-	method: "POST";
+	method: "GET" | "POST";
 	path: string;
 	body: unknown;
 };
@@ -45,6 +57,14 @@ export type HttpTransport = {
 	request: (request: HttpRequest) => Promise<HttpResponse>;
 };
 
+export type SimulationClient = {
+	submitReferenceRun: (
+		submission: ReferenceRunSubmission,
+	) => Promise<ReferenceRunSubmissionResponse>;
+	getReferenceRun: (runId: string) => Promise<ReferenceRunSubmissionResponse>;
+	getReferenceRunResult: (runId: string) => Promise<ReferenceRunResultResponse>;
+};
+
 export class SimulationApiError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -52,7 +72,9 @@ export class SimulationApiError extends Error {
 	}
 }
 
-export function createSimulationClient(transport: HttpTransport) {
+export function createSimulationClient(
+	transport: HttpTransport,
+): SimulationClient {
 	return {
 		submitReferenceRun: async (
 			submission: ReferenceRunSubmission,
@@ -74,12 +96,43 @@ export function createSimulationClient(transport: HttpTransport) {
 					"Fixture reference-run submission was not accepted.",
 				);
 			}
-			return parseReferenceRun(response.body);
+			return parseReferenceRun(response.body, ["queued"]);
+		},
+		getReferenceRun: async (runId) => {
+			const response = await transport.request({
+				method: "GET",
+				path: `/api/v1/reference-runs/${runId}`,
+				body: undefined,
+			});
+			if (response.status !== 200) {
+				throw new SimulationApiError(
+					"Fixture reference-run status was unavailable.",
+				);
+			}
+			return parseReferenceRun(response.body, [
+				"queued",
+				"running",
+				"complete",
+				"failed",
+			]);
+		},
+		getReferenceRunResult: async (runId) => {
+			const response = await transport.request({
+				method: "GET",
+				path: `/api/v1/reference-runs/${runId}/results`,
+				body: undefined,
+			});
+			if (response.status !== 200) {
+				throw new SimulationApiError(
+					"Fixture reference-run result was unavailable.",
+				);
+			}
+			return parseReferenceRunResult(response.body);
 		},
 	};
 }
 
-export function createFetchTransport(
+function createFetchTransport(
 	fetchImplementation: typeof fetch = fetch,
 ): HttpTransport {
 	return {
@@ -97,7 +150,12 @@ export function createFetchTransport(
 	};
 }
 
-function parseReferenceRun(body: unknown): ReferenceRunSubmissionResponse {
+export const simulationClient = createSimulationClient(createFetchTransport());
+
+function parseReferenceRun(
+	body: unknown,
+	allowedStatuses: ReferenceRun["status"][],
+): ReferenceRunSubmissionResponse {
 	if (
 		!isRecord(body) ||
 		body.api_version !== "v1" ||
@@ -118,7 +176,8 @@ function parseReferenceRun(body: unknown): ReferenceRunSubmissionResponse {
 		sourceKind !== "fixture" ||
 		typeof caseId !== "string" ||
 		typeof runId !== "string" ||
-		status !== "queued"
+		!isReferenceRunStatus(status) ||
+		!allowedStatuses.includes(status)
 	) {
 		throw new SimulationApiError(
 			"Fixture reference-run response was malformed.",
@@ -129,6 +188,49 @@ function parseReferenceRun(body: unknown): ReferenceRunSubmissionResponse {
 		provenance: { sourceKind },
 		run: { caseId, runId, status },
 	};
+}
+
+function parseReferenceRunResult(body: unknown): ReferenceRunResultResponse {
+	if (
+		!isRecord(body) ||
+		body.api_version !== "v1" ||
+		!isRecord(body.fixture) ||
+		!isRecord(body.provenance) ||
+		!isRecord(body.result)
+	) {
+		throw new SimulationApiError(
+			"Fixture reference-run result response was malformed.",
+		);
+	}
+	const { corpus_id: corpusId, kind } = body.fixture;
+	const { source_kind: sourceKind } = body.provenance;
+	const { quantity, units, value } = body.result;
+	if (
+		typeof corpusId !== "string" ||
+		kind !== "representative" ||
+		sourceKind !== "fixture" ||
+		typeof quantity !== "string" ||
+		typeof units !== "string" ||
+		typeof value !== "number"
+	) {
+		throw new SimulationApiError(
+			"Fixture reference-run result response was malformed.",
+		);
+	}
+	return {
+		fixture: { corpusId, kind },
+		provenance: { sourceKind },
+		result: { quantity, units, value },
+	};
+}
+
+function isReferenceRunStatus(value: unknown): value is ReferenceRun["status"] {
+	return (
+		value === "queued" ||
+		value === "running" ||
+		value === "complete" ||
+		value === "failed"
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -94,6 +94,58 @@ test("rejects a reference-run submission response without the common envelope", 
 	).rejects.toThrow("Fixture reference-run response was malformed.");
 });
 
+test("observes a fixture run and reads its representative result through the API transport", async () => {
+	const requests: unknown[] = [];
+	const client = createSimulationClient({
+		request: async (request) => {
+			requests.push(request);
+			if (request.path.endsWith("/results")) {
+				return {
+					status: 200,
+					body: {
+						api_version: "v1",
+						fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
+						provenance: { source_kind: "fixture" },
+						result: {
+							quantity: "j_integral_proxy",
+							value: 12.4,
+							units: "J/m²",
+						},
+					},
+				};
+			}
+			return {
+				status: 200,
+				body: {
+					api_version: "v1",
+					fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
+					provenance: { source_kind: "fixture" },
+					run: {
+						run_id: "run-0001",
+						case_id: "sic-sic-panel-042",
+						status: "complete",
+					},
+				},
+			};
+		},
+	});
+
+	expect(await client.getReferenceRun("run-0001")).toMatchObject({
+		run: { runId: "run-0001", status: "complete" },
+	});
+	expect(await client.getReferenceRunResult("run-0001")).toMatchObject({
+		result: { quantity: "j_integral_proxy", value: 12.4, units: "J/m²" },
+	});
+	expect(requests).toEqual([
+		{ method: "GET", path: "/api/v1/reference-runs/run-0001", body: undefined },
+		{
+			method: "GET",
+			path: "/api/v1/reference-runs/run-0001/results",
+			body: undefined,
+		},
+	]);
+});
+
 const referenceRunSubmission = {
 	caseId: "sic-sic-panel-042",
 	inputs: {

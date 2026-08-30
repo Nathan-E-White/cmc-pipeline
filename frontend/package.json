@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000",
-    "test": "bun test",
+		"test": "bun run test:client && bun run test:ui",
+		"test:client": "bun test src/simulation-client.test.ts",
+		"test:ui": "vitest run",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
@@ -27,13 +29,16 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
+    "@solidjs/testing-library": "^0.8.10",
     "@tanstack/devtools-vite": "latest",
     "@tanstack/intent": "^0.3.7",
     "@tanstack/router-cli": "^1.133.21",
     "@types/bun": "^1.4.0",
+    "happy-dom": "^20.12.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
-    "vite-plugin-solid": "^2.11.12"
+    "vite-plugin-solid": "^2.11.12",
+    "vitest": "^4.1.11"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

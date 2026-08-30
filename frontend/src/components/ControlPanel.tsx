@@ -1,20 +1,14 @@
 import type { Accessor } from "solid-js";
 
-import type {
-	SimulationInput,
-	SimulationSnapshot,
-	SolverKind,
-} from "../simulation";
+import type { SimulationInput, SimulationSnapshot } from "../simulation";
 
 type Props = {
 	inputs: Accessor<SimulationInput>;
 	snapshot: Accessor<SimulationSnapshot>;
 	onInput: (value: Partial<SimulationInput>) => void;
-	onRun: (solver: SolverKind) => void;
 };
 
 export function ControlPanel(props: Props) {
-	const disabled = () => props.snapshot().status === "running";
 	const range =
 		(key: "thermalGradient" | "mechanicalLoad" | "coatingStrength") =>
 		(event: InputEvent & { currentTarget: HTMLInputElement }) =>
@@ -63,31 +57,6 @@ export function ControlPanel(props: Props) {
 					unit="MPa"
 					value={props.inputs().coatingStrength}
 				/>
-			</section>
-			<section>
-				<h2>Comparison run</h2>
-				<p>
-					Illustrative UI state only. Wire it to declared reference evidence and
-					a bounded surrogate before calling it adjudication.
-				</p>
-				<div class="btn-group">
-					<button
-						class="reference"
-						disabled={disabled()}
-						onClick={() => props.onRun("FEA")}
-						type="button"
-					>
-						Run reference solver
-					</button>
-					<button
-						class="surrogate"
-						disabled={disabled()}
-						onClick={() => props.onRun("FNO")}
-						type="button"
-					>
-						Run surrogate
-					</button>
-				</div>
 			</section>
 			<section class="performance">
 				<h2>Illustrative compute overhead</h2>
