@@ -52,7 +52,7 @@ def main() -> None:
                        "mean_j_mpa_mm": mean_j, "contour_spread_percent": percent_change(max(values), min(values))})
 
     subprocess.run(["python3", str(args.visualizer), "--mesh", str(args.output / "levels" / "medium" / "edge-cracked-plate-v1.msh"),
-                    "--output", str(args.output / "case-visual.svg")], check=True)
+                    "--output", str(args.output / "case-visual.svg"), "--case-card", str(args.case_card)], check=True)
     target = card["analytical_authority"]["plane_strain_j_mpa_mm"]
     gates = card["fracture_quantity"]["gates"]
     fine, medium = levels[2], levels[1]
@@ -65,7 +65,9 @@ def main() -> None:
                 runtime_seconds <= gates["runtime_seconds_max"])
     write_json(args.output / "provenance-convergence.json", {
         "case_id": card["case_id"], "status": "accepted" if accepted else "indeterminate",
-        "runtime": {"seconds_excluding_image_build": runtime_seconds, "limit_seconds": gates["runtime_seconds_max"]},
+        "runtime": {"seconds_excluding_image_build": runtime_seconds, "limit_seconds": gates["runtime_seconds_max"],
+                    "gmsh_version": subprocess.check_output(["gmsh", "-version"], text=True).strip(),
+                    "dolfinx_version": __import__("dolfinx").__version__},
         "analytical_authority": card["analytical_authority"], "levels": levels,
         "comparison": {"fine_analytical_error_percent": analytical_error,
                        "fine_medium_change_percent": fine_medium_change},

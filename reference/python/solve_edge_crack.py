@@ -31,6 +31,16 @@ def _write_json(path: Path, payload: dict) -> None:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _stress(domain: mesh.Mesh, displacement):
+    identity = ufl.Identity(domain.geometry.dim)
+    strain = ufl.sym(ufl.grad(displacement))
+    mu = E_MPA / (2.0 * (1.0 + POISSONS_RATIO))
+    lame_lambda = E_MPA * POISSONS_RATIO / (
+        (1.0 + POISSONS_RATIO) * (1.0 - 2.0 * POISSONS_RATIO)
+    )
+    return lame_lambda * ufl.tr(strain) * identity + 2.0 * mu * strain
+
+
 def _domain_integral_j(domain: mesh.Mesh, displacement: fem.Function, radius_mm: float) -> float:
     """Evaluate the x-directed J quantity with a compact radial weight field."""
     Q = fem.functionspace(domain, ("Lagrange", 1))
@@ -42,13 +52,8 @@ def _domain_integral_j(domain: mesh.Mesh, displacement: fem.Function, radius_mm:
         return np.maximum(0.0, 1.0 - distance / radius_mm)
 
     weight.interpolate(radial_weight)
-    identity = ufl.Identity(domain.geometry.dim)
     strain = lambda w: ufl.sym(ufl.grad(w))
-    mu = E_MPA / (2.0 * (1.0 + POISSONS_RATIO))
-    lame_lambda = E_MPA * POISSONS_RATIO / (
-        (1.0 + POISSONS_RATIO) * (1.0 - 2.0 * POISSONS_RATIO)
-    )
-    stress = lame_lambda * ufl.tr(strain(displacement)) * identity + 2.0 * mu * strain(displacement)
+    stress = _stress(domain, displacement)
     energy_density = 0.5 * ufl.inner(stress, strain(displacement))
     displacement_x_derivative = ufl.grad(displacement)[:, 0]
     energy_momentum = ufl.dot(stress, displacement_x_derivative) - ufl.as_vector(
@@ -83,13 +88,8 @@ def main() -> None:
     V = fem.functionspace(domain, vector_element)
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    identity = ufl.Identity(domain.geometry.dim)
     strain = lambda w: ufl.sym(ufl.grad(w))
-    mu = E_MPA / (2.0 * (1.0 + POISSONS_RATIO))
-    lame_lambda = E_MPA * POISSONS_RATIO / (
-        (1.0 + POISSONS_RATIO) * (1.0 - 2.0 * POISSONS_RATIO)
-    )
-    stress = lambda w: lame_lambda * ufl.tr(strain(w)) * identity + 2.0 * mu * strain(w)
+    stress = lambda w: _stress(domain, w)
 
     dx = ufl.Measure("dx", domain=domain)
     ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tags)

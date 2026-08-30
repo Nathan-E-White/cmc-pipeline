@@ -36,8 +36,7 @@ The command writes:
 
 The generator uses Gmsh's Crack plugin to turn the declared `crack_trace` into
 two topologically separate `crack_faces`; `mesh-audit` rejects a mesh that
-lacks that opened topology. The next closure item is domain-integral J
-convergence uses the two independently declared radii (8 and 12 mm), compares
+lacks that opened topology. Domain-integral J convergence uses the two independently declared radii (8 and 12 mm), compares
 the fine result with the fixed NASA correction value, and fails closed to an
 `indeterminate` artifact when any declared gate is missed. The result remains a
 numerical reference for this bounded isotropic benchmark, not experimental truth.
