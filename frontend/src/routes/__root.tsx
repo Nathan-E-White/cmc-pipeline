@@ -1,14 +1,14 @@
 import {
+	createRootRouteWithContext,
 	HeadContent,
 	Outlet,
 	Scripts,
-	createRootRouteWithContext,
-} from "@tanstack/solid-router"
-import { TanStackRouterDevtools } from "@tanstack/solid-router-devtools"
-import { Suspense } from "solid-js"
-import { HydrationScript } from "solid-js/web"
+} from "@tanstack/solid-router";
+import { TanStackRouterDevtools } from "@tanstack/solid-router-devtools";
+import { Suspense } from "solid-js";
+import { HydrationScript } from "solid-js/web";
 
-import styleCss from "../styles.css?url"
+import styleCss from "../styles.css?url";
 
 export const Route = createRootRouteWithContext()({
 	head: () => ({
@@ -20,7 +20,7 @@ export const Route = createRootRouteWithContext()({
 		title: "CMC Fracture Pipeline",
 	}),
 	shellComponent: RootComponent,
-})
+});
 
 function RootComponent() {
 	return (
@@ -37,5 +37,5 @@ function RootComponent() {
 				<Scripts />
 			</body>
 		</html>
-	)
+	);
 }
