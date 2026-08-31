@@ -38,6 +38,8 @@
     "kind": "monotonic-top-boundary-displacement",
     "program": {
       "boundary": "loaded",
+      "initial_increment_mm": 0.001,
+      "maximum_displacement_mm": 1.0,
       "endpoint": {
         "quantity": "mouth-opening",
         "mouth_opening_mm": 0.1,

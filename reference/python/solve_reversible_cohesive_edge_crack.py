@@ -55,6 +55,18 @@ def _add_contribution(vector, matrix, contribution, node_dofs: dict[int, tuple[i
             matrix.setValues(node_dofs[row_node], node_dofs[column_node], values, addv=PETSc.InsertMode.ADD_VALUES)
 
 
+def _mouth_opening_mm(pair_map: dict, displacements: dict[int, tuple[float, float]]) -> float:
+    """Read the mouth from the declared map; no coordinate pairing is inferred."""
+    correspondence = min(
+        pair_map["ordered_element_pairs"][0]["reference_node_correspondences"],
+        key=lambda item: float(item["reference_s_mm"]),
+    )
+    normal = pair_map["reference_trace"]["normal_minus_to_plus"]
+    minus = displacements[int(correspondence["minus_node_id"])]
+    plus = displacements[int(correspondence["plus_node_id"])]
+    return float((plus[0] - minus[0]) * normal[0] + (plus[1] - minus[1]) * normal[1])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mesh", type=Path, required=True)
@@ -158,20 +170,32 @@ def main() -> None:
     snes.setFunction(residual, residual_vector)
     snes.setJacobian(tangent, jacobian)
     snes.setTolerances(rtol=1e-8, max_it=25)
+    residual_history: list[float] = []
+    snes.setMonitor(lambda _snes, _iteration, residual_norm: residual_history.append(float(residual_norm)))
     snes.getKSP().setType("preonly")
     snes.getKSP().getPC().setType("lu")
     snes.solve(None, displacement.x.petsc_vec)
     reason = snes.getConvergedReason()
     if reason <= 0:
         raise RuntimeError(f"PETSc nonlinear solve did not converge: reason {reason}")
-    final = assembler.assemble(pair_map, declared_displacements(displacement.x.petsc_vec))
+    final_displacements = declared_displacements(displacement.x.petsc_vec)
+    final = assembler.assemble(pair_map, final_displacements)
+    relative_residual = 0.0 if not residual_history or residual_history[0] == 0.0 else residual_history[-1] / residual_history[0]
     args.output.mkdir(parents=True, exist_ok=True)
     if comm.rank == 0:
         (args.output / "reversible-cohesive-step.json").write_text(json.dumps({
             "case_id": card["case_id"], "status": "solved-single-displacement-step",
             "top_displacement_mm": args.top_displacement_mm, "newton_iterations": snes.getIterationNumber(),
+            "relative_residual": relative_residual, "residual_history": residual_history,
+            "mouth_opening_mm": _mouth_opening_mm(pair_map, final_displacements),
             "reversible_interface_potential_mpa_mm2": final.reversible_potential_mpa_mm2,
             "quadrature_subintervals": final.quadrature_subintervals,
+            "diagnostics": {
+                "reaction": {"status": "not-implemented", "scope": "later convergence/evidence work"},
+                "external_work": {"status": "not-implemented", "scope": "later convergence/evidence work"},
+                "bulk_strain_energy": {"status": "not-implemented", "scope": "later convergence/evidence work"},
+                "j": {"status": "not-implemented", "scope": "Item 6 diagnostic only"},
+            },
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

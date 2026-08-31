@@ -136,10 +136,11 @@ def test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope()
     mutations = (
         ("model", "cohesive_interface", "law", "peak_opening_mm"),
         ("model", "cohesive_interface", "provenance", "authority"),
+        ("loading", "program", "initial_increment_mm"),
         ("loading", "program", "endpoint", "mouth_opening_mm"),
         ("declared_exclusions",),
     )
-    invalid_values = (0.1, "measured", 0.09, ["contact"])
+    invalid_values = (0.1, "measured", 0.002, 0.09, ["contact"])
     for path, value in zip(mutations, invalid_values, strict=True):
         candidate = json.loads(json.dumps(case_card))
         target = candidate
