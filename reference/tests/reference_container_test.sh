@@ -37,4 +37,5 @@ docker --context "${context}" run --rm \
   "${image}" \
   converge-reversible-cohesive-case --output /artifacts
 test -s "${reversible_output_dir}/reversible-cohesive-convergence.json"
+test -s "${reversible_output_dir}/case-visual.svg"
 python3 reference/tests/validate_reversible_cohesive_convergence_artifact.py "${reversible_output_dir}/reversible-cohesive-convergence.json"

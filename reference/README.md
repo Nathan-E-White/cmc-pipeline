@@ -15,8 +15,8 @@ bash reference/tests/reference_container_test.sh
 
 The Dockerfile pins the official DOLFINx multi-architecture manifest by digest.
 It installs Gmsh and its C++ headers, builds the C++20 `mesh-audit` executable,
-runs its CTest suite, then runs both public commands while building the image,
-including a real plane-strain solve and all-level convergence gate.
+runs its CTest suite, and smoke-tests the V1 and prescribed-traction V2
+commands. The dedicated container test runs the full reversible program.
 
 ## Public command
 
@@ -38,6 +38,26 @@ Its `provenance-convergence.json` records mesh/contour agreement and runtime,
 but intentionally has no NASA comparison or analytical-authority field. Its
 domain integral is a diagnostic for the declared loading, not a path-independent
 material toughness.
+
+The reversible cohesive tracer is a separate public command. It uses a
+generator-owned paired-lip artifact and a synthetic, history-free bilinear
+normal-opening law under monotonic prescribed top displacement:
+
+```sh
+docker --context orbstack run --rm -v "$(pwd)/reference/runs:/artifacts" \
+  cmc-reference-solver:test converge-reversible-cohesive-case --output /artifacts
+```
+
+It writes `reversible-cohesive-convergence.json`, `case-visual.svg`, and one
+directory per declared mesh level. Every program attempt is retained under
+`single-step-attempts/`; each level is explicitly `solved`, `failed`, or
+`indeterminate`. Refinement comparisons appear only when all three levels are
+solved with complete accounting. The command reports reaction, external work,
+bulk strain energy, reversible interface potential, and diagnostic-only J.
+Those quantities are numerical evidence within this synthetic fixed-crack
+model—not fracture energy, toughness, calibration, physical validation,
+qualification, or design authority. Compression is rejected rather than
+treated as contact or silently repaired.
 
 The command writes:
 

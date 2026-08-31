@@ -100,7 +100,9 @@ def test_public_runner_and_container_validate_the_reversible_cohesive_convergenc
     container_test = (ROOT / "reference/tests/reference_container_test.sh").read_text(encoding="utf-8")
     assert "converge-reversible-cohesive-case" in runner
     assert "converge_reversible_cohesive_edge_crack.py" in runner
+    assert "render_edge_crack_visual.py" in runner
     assert "validate_reversible_cohesive_convergence_artifact.py" in container_test
+    assert 'reversible_output_dir}/case-visual.svg' in container_test
 
 
 def _validate_reversible_case(card: dict) -> subprocess.CompletedProcess[str]:
@@ -117,6 +119,16 @@ def _validate_reversible_case(card: dict) -> subprocess.CompletedProcess[str]:
             text=True,
             capture_output=True,
             check=False,
+        )
+
+
+def _validate_reversible_convergence(payload: dict) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as directory:
+        artifact = Path(directory) / "reversible-cohesive-convergence.json"
+        artifact.write_text(json.dumps(payload), encoding="utf-8")
+        return subprocess.run(
+            [sys.executable, str(ROOT / "reference/tests/validate_reversible_cohesive_convergence_artifact.py"), str(artifact)],
+            text=True, capture_output=True, check=False,
         )
 
 
@@ -159,6 +171,26 @@ def test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope()
         assert result.returncode != 0
 
 
+def test_reversible_convergence_claim_boundary_rejects_missing_j_limit_or_program_propagation() -> None:
+    boundary = json.loads((ROOT / "reference/cases/edge-cracked-plate-reversible-v2.json").read_text(encoding="utf-8"))["claim_boundary"]
+    payload = {
+        "case_id": "edge-cracked-plate-reversible-v2", "status": "failed", "claim_boundary": boundary,
+        "adjudication": "synthetic reversible-cohesive numerical tracer; J is diagnostic only and no toughness or fracture-energy authority is asserted.",
+        "levels": [
+            {"name": name, "status": "failed", "program": {"attempts": [], "claim_boundary": boundary}, "metrics": None}
+            for name in ("coarse", "medium", "fine")
+        ],
+    }
+    assert _validate_reversible_convergence(payload).returncode == 0
+    for key, value in (("adjudication", "synthetic tracer"), ("claim_boundary", "missing")):
+        candidate = json.loads(json.dumps(payload))
+        candidate[key] = value
+        assert _validate_reversible_convergence(candidate).returncode != 0
+    candidate = json.loads(json.dumps(payload))
+    candidate["levels"][1]["program"]["claim_boundary"] = "wrong boundary"
+    assert _validate_reversible_convergence(candidate).returncode != 0
+
+
 if __name__ == "__main__":
     test_geo_declares_fixed_benchmark_envelope()
     test_solver_image_is_immutable_and_smoke_tests_its_contents()
@@ -172,3 +204,4 @@ if __name__ == "__main__":
     test_solver_image_generates_and_validates_opened_crack_pair_artifacts_at_every_level()
     test_reversible_case_card_declares_the_synthetic_reversible_tracer()
     test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope()
+    test_reversible_convergence_claim_boundary_rejects_missing_j_limit_or_program_propagation()

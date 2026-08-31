@@ -63,6 +63,7 @@ def main() -> None:
     parser.add_argument("--artifact-validator", type=Path, required=True)
     parser.add_argument("--program-runner", type=Path, required=True)
     parser.add_argument("--single-step-solver", type=Path, required=True)
+    parser.add_argument("--visualizer", type=Path, required=True)
     args = parser.parse_args()
 
     card = json.loads(args.case_card.read_text(encoding="utf-8"))
@@ -115,6 +116,8 @@ def main() -> None:
             },
             "energy_closure": fine["energy_closure"],
         }
+    subprocess.run(["python3", str(args.visualizer), "--mesh", str(args.output / "levels" / "medium" / f"{card['case_id']}.msh"),
+                    "--output", str(args.output / "case-visual.svg"), "--case-card", str(args.case_card)], check=True)
     payload = {
         "case_id": card["case_id"], "status": status,
         "runtime": {"seconds_excluding_image_build": time.monotonic() - started},

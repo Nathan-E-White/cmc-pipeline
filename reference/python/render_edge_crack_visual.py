@@ -51,22 +51,33 @@ def main() -> None:
             raise RuntimeError(f"Missing physical boundary: {name}")
 
         loaded, support, crack = (boundary_path(name) for name in ("loaded", "support_y", "crack_faces"))
-        traction = card["model"]["nominal_traction_mpa"]
         title = card["case_id"].replace("-", " ").upper()
-        bridging_label = ""
+        loading_label = ""
+        model_label = ""
         if "bridging" in card["model"]:
             bridging = card["model"]["bridging"]
-            bridging_label = (
+            loading_label = f"loaded: {card['model']['nominal_traction_mpa']} MPa"
+            model_label = (
                 f'<text x="220" y="555" font-size="14">prescribed closure traction: '
                 f'{bridging["peak_traction_mpa"]} MPa at mouth to 0 MPa at tip</text>'
             )
+        elif "cohesive_interface" in card["model"]:
+            law = card["model"]["cohesive_interface"]["law"]
+            loading_label = "loaded: monotonic prescribed displacement"
+            model_label = (
+                '<text x="180" y="530" font-size="14">declared paired exterior lips; synthetic reversible normal-opening law</text>'
+                f'<text x="205" y="555" font-size="14">peak: {law["peak_traction_mpa"]} MPa at '
+                f'{law["peak_opening_mm"]} mm; zero traction at {law["final_opening_mm"]} mm</text>'
+            )
+        else:
+            loading_label = f"loaded: {card['model']['nominal_traction_mpa']} MPa"
         svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {CANVAS_WIDTH} {CANVAS_HEIGHT}">
 <rect width=\"{CANVAS_WIDTH}\" height=\"{CANVAS_HEIGHT}\" fill=\"#f8f5ed\"/><style>text{{font-family:Arial,sans-serif;fill:#151515}} .mesh{{fill:none;stroke:#426b8a;stroke-width:.45}} .bc{{stroke:#b43d2d;stroke-width:4}} .support{{stroke:#151515;stroke-width:4}}</style>
 <text x=\"{MARGIN}\" y=\"45\" font-size=\"22\">{title}</text><text x=\"{MARGIN}\" y=\"70\" font-size=\"13\">actual medium generated quadratic mesh and declared boundary conditions</text>
 <g class="mesh">{"".join(polygons)}</g>
-<polyline class=\"bc\" points=\"{loaded}\"/><text x=\"570\" y=\"95\" font-size=\"14\">loaded: {traction} MPa</text>
+<polyline class=\"bc\" points=\"{loaded}\"/><text x=\"430\" y=\"95\" font-size=\"14\">{loading_label}</text>
 <polyline class=\"support\" points=\"{support}\"/><text x=\"65\" y=\"1080\" font-size=\"14\">support_y; x anchor at origin</text>
-<polyline points=\"{crack}\" stroke=\"#b43d2d\" stroke-width=\"5\" fill=\"none\"/><text x=\"220\" y=\"530\" font-size=\"14\">opened crack faces</text>{bridging_label}
+<polyline points=\"{crack}\" stroke=\"#b43d2d\" stroke-width=\"5\" fill=\"none\"/><text x=\"220\" y=\"505\" font-size=\"14\">opened crack faces</text>{model_label}
 </svg>"""
         args.output.write_text(svg, encoding="utf-8")
     finally:

@@ -28,7 +28,8 @@ if [[ "${command}" == "converge-reversible-cohesive-case" ]]; then
     --mesh-audit /usr/local/bin/mesh-audit \
     --artifact-validator /opt/cmc/python/validate_opened_crack_mesh_artifacts.py \
     --program-runner /opt/cmc/python/run_reversible_cohesive_program.py \
-    --single-step-solver /opt/cmc/python/solve_reversible_cohesive_edge_crack.py
+    --single-step-solver /opt/cmc/python/solve_reversible_cohesive_edge_crack.py \
+    --visualizer /opt/cmc/python/render_edge_crack_visual.py
   exit 0
 fi
 mesh_path="${output_dir}/${case_id}.msh"
