@@ -6,7 +6,7 @@ CLAIM_BOUNDARY = (
     "or a qualified structural prediction."
 )
 
-CASES = {
+_CASES = {
     "sic-sic-panel-042": {
         "label": "SiC/SiC panel 042",
         "architecture": "sic_sic",
@@ -70,34 +70,81 @@ CASES = {
 }
 
 
-def fixture_descriptor(case_id: str | None = None) -> dict[str, str]:
-    fixture = {"corpus_id": CORPUS_ID, "kind": "representative"}
-    if case_id is not None:
-        fixture.update({"case_id": case_id, "revision": CASES[case_id]["revision"]})
-    return fixture
+class FixtureCorpus:
+    """Own versioned V1 fixture facts, availability, and provenance."""
 
+    def find(self, case_id: str) -> dict | None:
+        return _CASES.get(case_id)
 
-def provenance(case_id: str | None = None, *, mesh: bool = False, adjudication: bool = False) -> dict:
-    if case_id is None:
-        return {
+    def inputs(self, case_id: str) -> dict:
+        return self.require(case_id)["inputs"]
+
+    def require(self, case_id: str) -> dict:
+        case = self.find(case_id)
+        if case is None:
+            raise KeyError(case_id)
+        return case
+
+    def descriptor(self, case_id: str | None = None) -> dict[str, str]:
+        fixture = {"corpus_id": CORPUS_ID, "kind": "representative"}
+        if case_id is not None:
+            fixture.update({"case_id": case_id, "revision": self.require(case_id)["revision"]})
+        return fixture
+
+    def provenance(
+        self, case_id: str | None = None, *, mesh: bool = False, adjudication: bool = False
+    ) -> dict:
+        if case_id is None:
+            return {"source_kind": "fixture", "claim_boundary": "Representative fixture metadata only."}
+        value = {
             "source_kind": "fixture",
-            "claim_boundary": "Representative fixture metadata only.",
+            "reference_solution": {
+                "model_id": "demo-cmc-fracture-model",
+                "solver_configuration_id": "demo-config-r1",
+                "discretization_id": "demo-mesh-r1",
+            },
+            "claim_boundary": CLAIM_BOUNDARY,
+        }
+        if mesh:
+            value["claim_boundary"] = "Rendering fixture only; not a solver-grade mesh."
+        if adjudication:
+            value["surrogate"] = {"model_id": "demo-fno-r1", "domain_id": "demo-domain-r1"}
+            value["claim_boundary"] = "Fixture adjudication only; not independent physical validation or qualification."
+        return value
+
+    def list_cases(self) -> list[dict]:
+        return [
+            {
+                "case_id": case_id,
+                "label": case["label"],
+                "architecture": case["architecture"],
+                "availability": {
+                    "adjudication": "available" if "adjudication" in case else "unavailable",
+                    "mesh": "available" if "mesh" in case else "unavailable",
+                },
+            }
+            for case_id, case in _CASES.items()
+        ]
+
+    def case_metadata(self, case_id: str) -> dict:
+        case = self.require(case_id)
+        return {key: case[key] for key in ("label", "architecture", "inputs")}
+
+    def mesh(self, case_id: str) -> dict | None:
+        return self.require(case_id).get("mesh")
+
+    def adjudication(self, case_id: str) -> dict | None:
+        return self.require(case_id).get("adjudication")
+
+    def result(self, case_id: str) -> dict | None:
+        adjudication = self.adjudication(case_id)
+        if adjudication is None:
+            return None
+        return {
+            "quantity": adjudication["quantity"],
+            "value": adjudication["reference_value"],
+            "units": adjudication["units"],
         }
 
-    value = {
-        "source_kind": "fixture",
-        "reference_solution": {
-            "model_id": "demo-cmc-fracture-model",
-            "solver_configuration_id": "demo-config-r1",
-            "discretization_id": "demo-mesh-r1",
-        },
-        "claim_boundary": CLAIM_BOUNDARY,
-    }
-    if mesh:
-        value["claim_boundary"] = "Rendering fixture only; not a solver-grade mesh."
-    if adjudication:
-        value["surrogate"] = {"model_id": "demo-fno-r1", "domain_id": "demo-domain-r1"}
-        value["claim_boundary"] = (
-            "Fixture adjudication only; not independent physical validation or qualification."
-        )
-    return value
+
+fixture_corpus = FixtureCorpus()

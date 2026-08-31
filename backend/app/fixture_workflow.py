@@ -2,7 +2,7 @@
 
 from itertools import count
 
-from app.fixture_corpus import CASES
+from app.fixture_corpus import FixtureCorpus, fixture_corpus
 
 
 class FixtureWorkflowError(Exception):
@@ -13,14 +13,15 @@ class FixtureWorkflowError(Exception):
 
 
 class ReferenceRunService:
-    def __init__(self) -> None:
+    def __init__(self, corpus: FixtureCorpus = fixture_corpus) -> None:
+        self._corpus = corpus
         self._run_ids = count(1)
         self._runs: dict[str, dict] = {}
 
     def submit(self, case_id: object, inputs: object) -> dict:
         if not isinstance(case_id, str):
             raise FixtureWorkflowError(422, "invalid_reference_run", "A case_id is required.")
-        case = CASES.get(case_id)
+        case = self._corpus.find(case_id)
         if case is None:
             raise FixtureWorkflowError(
                 404, "case_not_found", "No fixture case exists for the supplied identifier."
@@ -57,21 +58,18 @@ class ReferenceRunService:
             raise FixtureWorkflowError(
                 409, "reference_run_not_complete", "The reference run has not reached a terminal state."
             )
-        adjudication = CASES[run["case_id"]].get("adjudication")
-        if adjudication is None:
+        result = self._corpus.result(run["case_id"])
+        if result is None:
             raise FixtureWorkflowError(
                 404, "artifact_not_available", "No result fixture is available for this reference run."
             )
-        return run, {
-            "quantity": adjudication["quantity"],
-            "value": adjudication["reference_value"],
-            "units": adjudication["units"],
-        }
+        return run, result
 
 
 class VerificationService:
-    def __init__(self, reference_runs: ReferenceRunService) -> None:
+    def __init__(self, reference_runs: ReferenceRunService, corpus: FixtureCorpus = fixture_corpus) -> None:
         self._reference_runs = reference_runs
+        self._corpus = corpus
         self._verification_ids = count(1)
         self._verifications: dict[str, dict] = {}
 
@@ -81,7 +79,7 @@ class VerificationService:
                 422, "invalid_verification", "A reference_run_id is required."
             )
         run, result = self._reference_runs.result(reference_run_id)
-        if inputs != CASES[run["case_id"]]["inputs"]:
+        if inputs != self._corpus.inputs(run["case_id"]):
             raise FixtureWorkflowError(
                 422,
                 "input_mismatch",
@@ -101,7 +99,9 @@ class VerificationService:
                 "Observation quantity, units, and numeric value must match the fixture result.",
             )
 
-        criterion = CASES[run["case_id"]]["adjudication"]["acceptance_criterion"]
+        adjudication = self._corpus.adjudication(run["case_id"])
+        assert adjudication is not None
+        criterion = adjudication["acceptance_criterion"]
         if observation.get("domain_status") == "outside_declared_domain":
             status = "indeterminate"
             relative_error = None

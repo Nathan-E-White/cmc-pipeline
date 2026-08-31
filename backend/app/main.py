@@ -6,13 +6,13 @@ from json import JSONDecodeError
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.fixture_corpus import CASES, fixture_descriptor, provenance
+from app.fixture_corpus import fixture_corpus
 from app.fixture_workflow import FixtureWorkflowError, ReferenceRunService, VerificationService
 
 app = FastAPI(title="CMC Pipeline Fixture API", version="v1")
 _CASE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-reference_runs = ReferenceRunService()
-verifications = VerificationService(reference_runs)
+reference_runs = ReferenceRunService(fixture_corpus)
+verifications = VerificationService(reference_runs, fixture_corpus)
 
 
 def error_response(status_code: int, code: str, message: str) -> JSONResponse:
@@ -65,7 +65,7 @@ async def normalise_method_not_allowed(request: Request, call_next):
 def require_case(case_id: str):
     if not _CASE_ID.fullmatch(case_id):
         return None, error_response(400, "invalid_case_id", "The supplied identifier is not a valid slug.")
-    case = CASES.get(case_id)
+    case = fixture_corpus.find(case_id)
     if case is None:
         return None, error_response(404, "case_not_found", "No fixture case exists for the supplied identifier.")
     return case, None
@@ -82,8 +82,8 @@ async def submit_reference_run(request: Request):
         return error_response(error.status_code, error.code, error.message)
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(run["case_id"]),
-        "provenance": provenance(run["case_id"]),
+        "fixture": fixture_corpus.descriptor(run["case_id"]),
+        "provenance": fixture_corpus.provenance(run["case_id"]),
         "run": run,
     }
 
@@ -96,8 +96,8 @@ def get_reference_run(run_id: str):
         return error_response(error.status_code, error.code, error.message)
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(run["case_id"]),
-        "provenance": provenance(run["case_id"]),
+        "fixture": fixture_corpus.descriptor(run["case_id"]),
+        "provenance": fixture_corpus.provenance(run["case_id"]),
         "run": run,
     }
 
@@ -110,8 +110,8 @@ def get_reference_run_result(run_id: str):
         return error_response(error.status_code, error.code, error.message)
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(run["case_id"]),
-        "provenance": provenance(run["case_id"]),
+        "fixture": fixture_corpus.descriptor(run["case_id"]),
+        "provenance": fixture_corpus.provenance(run["case_id"]),
         "result": result,
     }
 
@@ -129,8 +129,8 @@ async def verify_simulation(request: Request):
         return error_response(error.status_code, error.code, error.message)
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(run["case_id"]),
-        "provenance": provenance(run["case_id"], adjudication=True),
+        "fixture": fixture_corpus.descriptor(run["case_id"]),
+        "provenance": fixture_corpus.provenance(run["case_id"], adjudication=True),
         "verification": verification,
     }
 
@@ -144,8 +144,8 @@ def get_verification(verification_id: str):
         return error_response(error.status_code, error.code, error.message)
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(run["case_id"]),
-        "provenance": provenance(run["case_id"], adjudication=True),
+        "fixture": fixture_corpus.descriptor(run["case_id"]),
+        "provenance": fixture_corpus.provenance(run["case_id"], adjudication=True),
         "verification": verification,
     }
 
@@ -155,66 +155,57 @@ def get_verification(verification_id: str):
 def list_cases() -> dict:
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(),
-        "provenance": provenance(),
-        "cases": [
-            {
-                "case_id": case_id,
-                "label": case["label"],
-                "architecture": case["architecture"],
-                "availability": {
-                    "adjudication": "available" if "adjudication" in case else "unavailable",
-                    "mesh": "available" if "mesh" in case else "unavailable",
-                },
-            }
-            for case_id, case in CASES.items()
-        ],
+        "fixture": fixture_corpus.descriptor(),
+        "provenance": fixture_corpus.provenance(),
+        "cases": fixture_corpus.list_cases(),
     }
 
 
 @app.head("/api/v1/cases/{case_id}")
 @app.get("/api/v1/cases/{case_id}")
 def get_case(case_id: str):
-    case, error = require_case(case_id)
+    _case, error = require_case(case_id)
     if error:
         return error
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(case_id),
-        "provenance": provenance(case_id),
-        "case": {key: case[key] for key in ("label", "architecture", "inputs")},
+        "fixture": fixture_corpus.descriptor(case_id),
+        "provenance": fixture_corpus.provenance(case_id),
+        "case": fixture_corpus.case_metadata(case_id),
     }
 
 
 @app.head("/api/v1/cases/{case_id}/mesh")
 @app.get("/api/v1/cases/{case_id}/mesh")
 def get_mesh(case_id: str):
-    case, error = require_case(case_id)
+    _case, error = require_case(case_id)
     if error:
         return error
-    if "mesh" not in case:
+    mesh = fixture_corpus.mesh(case_id)
+    if mesh is None:
         return error_response(404, "artifact_not_available", "No mesh fixture is available for this case.")
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(case_id),
-        "provenance": provenance(case_id, mesh=True),
-        "mesh": case["mesh"],
+        "fixture": fixture_corpus.descriptor(case_id),
+        "provenance": fixture_corpus.provenance(case_id, mesh=True),
+        "mesh": mesh,
     }
 
 
 @app.head("/api/v1/cases/{case_id}/adjudication")
 @app.get("/api/v1/cases/{case_id}/adjudication")
 def get_adjudication(case_id: str):
-    case, error = require_case(case_id)
+    _case, error = require_case(case_id)
     if error:
         return error
-    if "adjudication" not in case:
+    adjudication = fixture_corpus.adjudication(case_id)
+    if adjudication is None:
         return error_response(
             404, "artifact_not_available", "No adjudication fixture is available for this case."
         )
     return {
         "api_version": "v1",
-        "fixture": fixture_descriptor(case_id),
-        "provenance": provenance(case_id, adjudication=True),
-        "adjudication": case["adjudication"],
+        "fixture": fixture_corpus.descriptor(case_id),
+        "provenance": fixture_corpus.provenance(case_id, adjudication=True),
+        "adjudication": adjudication,
     }
