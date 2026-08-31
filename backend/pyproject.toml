@@ -9,6 +9,8 @@ description = "Fixture-backed V1 HTTP API for the CMC Fracture Pipeline"
 requires-python = ">=3.14"
 dependencies = [
   "fastapi>=0.116,<1.0",
+  "minio>=7.2,<8.0",
+  "psycopg[binary]>=3.2,<4.0",
   "uvicorn>=0.30,<1.0",
 ]
 

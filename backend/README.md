@@ -24,5 +24,21 @@ For local browser development, serve the explicitly fixture-backed API on port
 This service only serves V1 representative fixture records. Its boundaries are
 defined in [`../docs/v1-api-contract.md`](../docs/v1-api-contract.md).
 
+## V3 local persistence slice
+
+V3's Run Mirror is separate from the V1 fixture routes. Its Postgres schema,
+idempotency, ordered events, and MinIO artifact identity are defined in
+[`../docs/v3-run-mirror-contract.md`](../docs/v3-run-mirror-contract.md).
+Run the local Compose contract tests only after `docker --context orbstack
+compose up -d` has made Postgres and MinIO healthy:
+
+```sh
+CMC_RUN_MIRROR_DSN=postgresql://cmc:local-development-only@localhost:5433/cmc_pipeline \\
+CMC_ARTIFACT_ENDPOINT=localhost:9000 \\
+CMC_ARTIFACT_ACCESS_KEY=cmc-local \\
+CMC_ARTIFACT_SECRET_KEY=local-development-only \\
+.venv/bin/python -m pytest tests/test_run_mirror_contract.py
+```
+
 For the complete local workflow, frontend proxy arrangement, fixture/provenance
 limits, and V2 seam notes, see [`../docs/v1-development.md`](../docs/v1-development.md).
