@@ -266,8 +266,7 @@ button:disabled {
 	}
 }
 
-/* PROTOTYPE ONLY — Paintbox register exploration. */
-.register-prototype {
+.run-register {
 	--paper: #f7f5f0;
 	--ink-dark: #151521;
 	--ink-muted: #615f66;
@@ -286,7 +285,7 @@ button:disabled {
 	min-height: 100vh;
 	padding: clamp(1.5rem, 5vw, 5rem);
 }
-.register-prototype button {
+.run-register button {
 	border-radius: 0;
 	text-transform: none;
 }

@@ -67,6 +67,12 @@ export type FixtureCaseResponse = {
 	provenance: FixtureProvenance;
 };
 
+export type FixtureAdjudicationResponse = {
+	adjudication: { quantity: string; surrogateValue: number; units: string };
+	fixture: FixtureDescriptor;
+	provenance: FixtureProvenance;
+};
+
 export type ReferenceRunSubmissionResponse = {
 	fixture: FixtureDescriptor;
 	provenance: FixtureProvenance;
@@ -126,6 +132,9 @@ export type HttpTransport = {
 export type SimulationClient = {
 	listFixtureCases: () => Promise<FixtureCatalogResponse>;
 	getFixtureCase: (caseId: string) => Promise<FixtureCaseResponse>;
+	getFixtureAdjudication: (
+		caseId: string,
+	) => Promise<FixtureAdjudicationResponse>;
 	submitReferenceRun: (
 		submission: ReferenceRunSubmission,
 	) => Promise<ReferenceRunSubmissionResponse>;
@@ -170,6 +179,18 @@ export function createSimulationClient(
 				throw new SimulationApiError("Fixture case detail was unavailable.");
 			}
 			return parseFixtureCase(response.body);
+		},
+		getFixtureAdjudication: async (
+			caseId,
+		): Promise<FixtureAdjudicationResponse> => {
+			const response = await transport.request({
+				method: "GET",
+				path: `/api/v1/cases/${caseId}/adjudication`,
+				body: undefined,
+			});
+			if (response.status !== 200)
+				throw new SimulationApiError("Fixture adjudication was unavailable.");
+			return parseFixtureAdjudication(response.body);
 		},
 		submitReferenceRun: async (
 			submission: ReferenceRunSubmission,
@@ -337,6 +358,24 @@ function parseFixtureCase(body: unknown): FixtureCaseResponse {
 			},
 		},
 	};
+}
+
+function parseFixtureAdjudication(body: unknown): FixtureAdjudicationResponse {
+	const envelope = parseEnvelope(body);
+	if (!isRecord(body) || !isRecord(body.adjudication))
+		throw new SimulationApiError("Fixture adjudication was malformed.");
+	const {
+		quantity,
+		surrogate_value: surrogateValue,
+		units,
+	} = body.adjudication;
+	if (
+		typeof quantity !== "string" ||
+		!isFiniteNumber(surrogateValue) ||
+		typeof units !== "string"
+	)
+		throw new SimulationApiError("Fixture adjudication was malformed.");
+	return { ...envelope, adjudication: { quantity, surrogateValue, units } };
 }
 
 function createFetchTransport(

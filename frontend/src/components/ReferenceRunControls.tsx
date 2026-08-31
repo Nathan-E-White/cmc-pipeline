@@ -1,6 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 
-import { declaredFixtureSurrogateObservation } from "../fixture-surrogate";
 import type {
 	FixtureCaseResponse,
 	FixtureCaseSummary,
@@ -11,6 +10,7 @@ import type {
 	ReferenceRunResult,
 	ReferenceRunSubmission,
 	SimulationClient,
+	SurrogateObservation,
 } from "../simulation-client";
 
 type Props = { client: SimulationClient };
@@ -32,15 +32,28 @@ export function ReferenceRunControls(props: Props) {
 	const [cases, setCases] = createSignal<FixtureCaseSummary[]>([]);
 	const [selectedCase, setSelectedCase] = createSignal<FixtureCaseResponse>();
 	const [selectedCaseId, setSelectedCaseId] = createSignal<string>();
+	const [selectedObservation, setSelectedObservation] =
+		createSignal<SurrogateObservation>();
 	const [isLoadingCase, setIsLoadingCase] = createSignal(true);
 
 	const loadCase = async (caseId: string) => {
 		setSelectedCaseId(caseId);
 		setSelectedCase(undefined);
+		setSelectedObservation(undefined);
 		setIsLoadingCase(true);
 		try {
-			const detail = await props.client.getFixtureCase(caseId);
-			if (selectedCaseId() === caseId) setSelectedCase(detail);
+			const [detail, adjudication] = await Promise.all([
+				props.client.getFixtureCase(caseId),
+				props.client.getFixtureAdjudication(caseId),
+			]);
+			if (selectedCaseId() === caseId) {
+				setSelectedCase(detail);
+				setSelectedObservation({
+					quantity: adjudication.adjudication.quantity,
+					value: adjudication.adjudication.surrogateValue,
+					units: adjudication.adjudication.units,
+				});
+			}
 		} catch {
 			if (selectedCaseId() === caseId)
 				setError("The declared fixture case could not be loaded.");
@@ -66,7 +79,8 @@ export function ReferenceRunControls(props: Props) {
 
 	const submit = async () => {
 		const detail = selectedCase();
-		if (!detail) return;
+		const observation = selectedObservation();
+		if (!detail || !observation) return;
 		const submission: ReferenceRunSubmission = {
 			caseId: detail.fixture.caseId,
 			inputs: detail.case.inputs,
@@ -88,7 +102,7 @@ export function ReferenceRunControls(props: Props) {
 				const verification = await props.client.verifySurrogateObservation(
 					observed.run.runId,
 					submission,
-					declaredFixtureSurrogateObservation(),
+					observation,
 				);
 				record.result = result.result;
 				record.resultProvenance = result.provenance;
@@ -104,7 +118,7 @@ export function ReferenceRunControls(props: Props) {
 	};
 
 	return (
-		<main class="register-prototype" aria-label="Fixture Run Register">
+		<main class="run-register" aria-label="Fixture Run Register">
 			<header class="register-masthead">
 				<div>
 					<p class="eyebrow">CMC Pipeline · V1 fixture client</p>

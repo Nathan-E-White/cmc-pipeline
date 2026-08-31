@@ -55,6 +55,15 @@ test("submits, observes, and renders a representative fixture reference result",
 				label: "SiC/SiC panel 042",
 			},
 		}),
+		getFixtureAdjudication: async () => ({
+			fixture,
+			provenance,
+			adjudication: {
+				quantity: "j_integral_proxy",
+				surrogateValue: 12.1,
+				units: "J/m²",
+			},
+		}),
 		submitReferenceRun: async () => ({
 			fixture,
 			provenance,
