@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "reference/python"))
 
+import converge_reversible_cohesive_edge_crack as convergence
 from converge_reversible_cohesive_edge_crack import (
     ReversibleCohesiveConvergence,
     ReversibleCohesiveToolchain,
@@ -84,6 +87,7 @@ increment={'reaction': {'status':'computed','value_mpa_mm':1.0}, 'external_work'
 if mode == 'malformed': increment['reaction'] = {'status': 'computed'}
 payload={'status':('failed' if mode == 'failed' else 'solved'),'claim_boundary':card['claim_boundary'],'attempts':[],'accepted_increments':([] if mode == 'indeterminate' else [increment])}
 output.mkdir(parents=True, exist_ok=True); (output/'reversible-cohesive-program.json').write_text(json.dumps(payload))
+if mode == 'failed': raise SystemExit(2)
 """,
         )
         visualizer = _script(
@@ -96,7 +100,7 @@ pathlib.Path(args[args.index('--output')+1]).write_text('<svg/>')
 """,
         )
         output = root / "output"
-        payload = ReversibleCohesiveConvergence(
+        convergence_run = ReversibleCohesiveConvergence(
             ReversibleCohesiveToolchain(
                 artifact_validator=validator,
                 case=root / "case.geo",
@@ -107,7 +111,21 @@ pathlib.Path(args[args.index('--output')+1]).write_text('<svg/>')
                 single_step_solver=root / "solver.py",
                 visualizer=visualizer,
             )
-        ).run(output)
+        )
+        if (tool_failures or {}).get("program_runner") == "launch":
+            original_run = subprocess.run
+
+            def fail_only_program_runner(command, *args, **kwargs):
+                if len(command) > 1 and command[1] == str(program):
+                    raise OSError("fixture launch failure")
+                return original_run(command, *args, **kwargs)
+
+            with patch.object(
+                convergence.subprocess, "run", side_effect=fail_only_program_runner
+            ):
+                payload = convergence_run.run(output)
+        else:
+            payload = convergence_run.run(output)
         # Preserve the observable result after TemporaryDirectory removes the fake tools.
         return payload, output
 
@@ -169,6 +187,42 @@ def test_visualizer_failure_preserves_numerical_evidence() -> None:
     assert payload["artifacts"]["case_visual"]["status"] == "failed"
 
 
+def test_failed_total_artifact_remains_contract_valid() -> None:
+    payload, _ = _run(
+        {"coarse": "solved", "medium": "solved", "fine": "solved"},
+        tool_failures={"coarse": "generator"},
+    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", encoding="utf-8"
+    ) as artifact:
+        json.dump(payload, artifact)
+        artifact.flush()
+        subprocess.run(
+            [
+                sys.executable,
+                str(
+                    ROOT
+                    / "reference/tests/validate_reversible_cohesive_convergence_artifact.py"
+                ),
+                artifact.name,
+            ],
+            check=True,
+        )
+
+
+def test_program_runner_launch_failure_is_declared_for_every_level() -> None:
+    payload, _ = _run(
+        {"coarse": "solved", "medium": "solved", "fine": "solved"},
+        tool_failures={"program_runner": "launch"},
+    )
+    assert payload["status"] == "failed"
+    assert [level["program"]["claim_boundary"] for level in payload["levels"]] == [
+        CARD["claim_boundary"],
+        CARD["claim_boundary"],
+        CARD["claim_boundary"],
+    ]
+
+
 if __name__ == "__main__":
     test_successful_levels_produce_a_solved_artifact()
     test_missing_program_artifact_marks_the_level_and_case_failed()
@@ -177,3 +231,5 @@ if __name__ == "__main__":
     test_runner_reported_failure_marks_the_case_failed()
     test_tool_failure_marks_only_its_level_and_later_levels_still_run()
     test_visualizer_failure_preserves_numerical_evidence()
+    test_failed_total_artifact_remains_contract_valid()
+    test_program_runner_launch_failure_is_declared_for_every_level()
