@@ -4,12 +4,29 @@ import { expect, test } from "vitest";
 
 import { ReferenceRunControls } from "./ReferenceRunControls";
 
+const fixture = {
+	caseId: "sic-sic-panel-042",
+	corpusId: "v1-demo-2026-08",
+	kind: "representative" as const,
+	revision: "1",
+};
+const provenance = {
+	claimBoundary:
+		"Comparison evidence within the declared numerical model; not experimental truth or a qualified structural prediction.",
+	referenceSolution: {
+		discretizationId: "demo-mesh-r1",
+		modelId: "demo-cmc-fracture-model",
+		solverConfigurationId: "demo-config-r1",
+	},
+	sourceKind: "fixture" as const,
+};
+
 test("submits, observes, and renders a representative fixture reference result", async () => {
 	const verificationRequests: unknown[][] = [];
 	const client = {
 		submitReferenceRun: async () => ({
-			fixture: { corpusId: "v1-demo-2026-08", kind: "representative" as const },
-			provenance: { sourceKind: "fixture" as const },
+			fixture,
+			provenance,
 			run: {
 				caseId: "sic-sic-panel-042",
 				runId: "run-0001",
@@ -17,8 +34,8 @@ test("submits, observes, and renders a representative fixture reference result",
 			},
 		}),
 		getReferenceRun: async () => ({
-			fixture: { corpusId: "v1-demo-2026-08", kind: "representative" as const },
-			provenance: { sourceKind: "fixture" as const },
+			fixture,
+			provenance,
 			run: {
 				caseId: "sic-sic-panel-042",
 				runId: "run-0001",
@@ -26,21 +43,19 @@ test("submits, observes, and renders a representative fixture reference result",
 			},
 		}),
 		getReferenceRunResult: async () => ({
-			fixture: { corpusId: "v1-demo-2026-08", kind: "representative" as const },
-			provenance: { sourceKind: "fixture" as const },
+			fixture,
+			provenance,
 			result: { quantity: "j_integral_proxy", units: "J/m²", value: 12.4 },
 		}),
 		verifySurrogateObservation: async (...request: unknown[]) => {
 			verificationRequests.push(request);
 			return {
-				fixture: {
-					corpusId: "v1-demo-2026-08",
-					kind: "representative" as const,
-				},
+				fixture,
 				provenance: {
+					...provenance,
 					claimBoundary:
 						"Fixture adjudication only; not independent physical validation or qualification.",
-					sourceKind: "fixture" as const,
+					surrogate: { domainId: "demo-domain-r1", modelId: "demo-fno-r1" },
 				},
 				verification: {
 					quantity: "j_integral_proxy",
@@ -68,16 +83,24 @@ test("submits, observes, and renders a representative fixture reference result",
 			},
 		}),
 	);
+	expect(
+		screen.getByText("No fixture records in this browser session."),
+	).toBeTruthy();
 
-	screen
-		.getByRole<HTMLButtonElement>("button", {
-			name: "Submit fixture reference run",
-		})
-		.click();
+	const submit = screen.getByRole<HTMLButtonElement>("button", {
+		name: "Record fixture reference run",
+	});
+	submit.click();
 	await waitFor(() => {
 		expect(screen.getByText("Complete fixture reference run")).toBeTruthy();
 		expect(screen.getByText("j_integral_proxy: 12.4 J/m²")).toBeTruthy();
-		expect(screen.getByText("Accepted fixture comparison")).toBeTruthy();
+		expect(screen.getByText("Accepted fixture adjudication")).toBeTruthy();
+		expect(screen.getByText(provenance.claimBoundary)).toBeTruthy();
+		expect(
+			screen.getByText(
+				"demo-cmc-fracture-model · demo-config-r1 · demo-mesh-r1",
+			),
+		).toBeTruthy();
 		expect(
 			screen.getByText(
 				"Fixture adjudication only; not independent physical validation or qualification.",
@@ -97,5 +120,12 @@ test("submits, observes, and renders a representative fixture reference result",
 				{ quantity: "j_integral_proxy", units: "J/m²", value: 12.1 },
 			],
 		]);
+	});
+	submit.click();
+	await waitFor(() => {
+		expect(screen.getAllByText("Complete fixture reference run")).toHaveLength(
+			2,
+		);
+		expect(verificationRequests).toHaveLength(2);
 	});
 });

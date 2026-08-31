@@ -1,7 +1,9 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 
 import { declaredFixtureSurrogateObservation } from "../fixture-surrogate";
 import type {
+	FixtureDescriptor,
+	FixtureProvenance,
 	FixtureVerification,
 	ReferenceRun,
 	ReferenceRunResult,
@@ -9,107 +11,204 @@ import type {
 	SimulationClient,
 } from "../simulation-client";
 
-type Props = {
-	client: SimulationClient;
-	submission: ReferenceRunSubmission;
+type Props = { client: SimulationClient; submission: ReferenceRunSubmission };
+
+type RegisterRecord = {
+	adjudicationProvenance?: FixtureProvenance;
+	fixture: FixtureDescriptor;
+	referenceProvenance: FixtureProvenance;
+	resultProvenance?: FixtureProvenance;
+	result?: ReferenceRunResult;
+	run: ReferenceRun;
+	verification?: FixtureVerification;
 };
 
 export function ReferenceRunControls(props: Props) {
-	const [run, setRun] = createSignal<ReferenceRun>();
-	const [result, setResult] = createSignal<ReferenceRunResult>();
-	const [verification, setVerification] = createSignal<FixtureVerification>();
-	const [verificationBoundary, setVerificationBoundary] =
-		createSignal<string>();
+	const [records, setRecords] = createSignal<RegisterRecord[]>([]);
 	const [error, setError] = createSignal<string>();
 	const [isSubmitting, setIsSubmitting] = createSignal(false);
-	const [isObserving, setIsObserving] = createSignal(false);
-	const loadCompletedRunEvidence = async (runId: string) => {
-		const resultResponse = await props.client.getReferenceRunResult(runId);
-		setResult(resultResponse.result);
-		const verificationResponse = await props.client.verifySurrogateObservation(
-			runId,
-			props.submission,
-			declaredFixtureSurrogateObservation(),
-		);
-		setVerification(verificationResponse.verification);
-		setVerificationBoundary(verificationResponse.provenance.claimBoundary);
-	};
 
 	const submit = async () => {
 		setError(undefined);
-		setResult(undefined);
-		setVerification(undefined);
-		setVerificationBoundary(undefined);
 		setIsSubmitting(true);
 		try {
-			const response = await props.client.submitReferenceRun(props.submission);
-			setRun(response.run);
-			const observed = await props.client.getReferenceRun(response.run.runId);
-			setRun(observed.run);
+			const submitted = await props.client.submitReferenceRun(props.submission);
+			const observed = await props.client.getReferenceRun(submitted.run.runId);
+			const record: RegisterRecord = {
+				fixture: observed.fixture,
+				referenceProvenance: observed.provenance,
+				run: observed.run,
+			};
 			if (observed.run.status === "complete") {
-				await loadCompletedRunEvidence(observed.run.runId);
+				const result = await props.client.getReferenceRunResult(
+					observed.run.runId,
+				);
+				const verification = await props.client.verifySurrogateObservation(
+					observed.run.runId,
+					props.submission,
+					declaredFixtureSurrogateObservation(),
+				);
+				record.result = result.result;
+				record.resultProvenance = result.provenance;
+				record.verification = verification.verification;
+				record.adjudicationProvenance = verification.provenance;
 			}
+			setRecords((current) => [record, ...current]);
 		} catch {
-			setRun(undefined);
-			setError("The declared fixture reference run could not be submitted.");
+			setError("The declared fixture reference run could not be recorded.");
 		} finally {
 			setIsSubmitting(false);
 		}
 	};
 
-	const observe = async () => {
-		const activeRun = run();
-		if (!activeRun) return;
-		setError(undefined);
-		setIsObserving(true);
-		try {
-			const response = await props.client.getReferenceRun(activeRun.runId);
-			setRun(response.run);
-			if (response.run.status === "complete") {
-				await loadCompletedRunEvidence(response.run.runId);
-			}
-		} catch {
-			setError("The fixture reference-run state could not be observed.");
-		} finally {
-			setIsObserving(false);
-		}
-	};
-
 	return (
-		<section aria-label="Fixture reference run" class="reference-run-controls">
-			<button disabled={isSubmitting()} onClick={submit} type="button">
-				Submit fixture reference run
-			</button>
-			<Show when={run() && run()?.status !== "complete"}>
-				<button disabled={isObserving()} onClick={observe} type="button">
-					Observe reference run
-				</button>
-			</Show>
-			<Show when={run()}>
-				{(activeRun) => <p>{formatRunStatus(activeRun().status)}</p>}
-			</Show>
-			<Show when={result()}>
-				{(referenceResult) => (
-					<p>{`${referenceResult().quantity}: ${referenceResult().value} ${referenceResult().units}`}</p>
-				)}
-			</Show>
-			<Show when={verification()}>
-				{(fixtureVerification) => (
-					<p>{formatVerificationStatus(fixtureVerification().status)}</p>
-				)}
-			</Show>
-			<Show when={verificationBoundary()}>
-				{(boundary) => <p>{boundary()}</p>}
-			</Show>
-			<Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
-		</section>
+		<main class="register-prototype" aria-label="Fixture Run Register">
+			<header class="register-masthead">
+				<div>
+					<p class="eyebrow">CMC Pipeline · V1 fixture client</p>
+					<h1>RUN REGISTER</h1>
+				</div>
+				<p class="fixture-stamp">
+					REPRESENTATIVE FIXTURE · NOT SOLVER EXECUTION
+				</p>
+			</header>
+			<section class="ledger-layout" aria-label="Fixture reference-run ledger">
+				<aside class="ledger-sidebar">
+					<p class="section-label">Browser-session register</p>
+					<h2>Recorded comparison evidence.</h2>
+					<p>
+						Each row is an in-memory V1 fixture record. Completion and
+						adjudication remain declared fixture outcomes.
+					</p>
+					<button disabled={isSubmitting()} onClick={submit} type="button">
+						{isSubmitting()
+							? "Recording fixture run…"
+							: "Record fixture reference run"}
+					</button>
+				</aside>
+				<div class="ledger-table-wrap">
+					<table class="ledger-table">
+						<thead>
+							<tr>
+								<th>Run</th>
+								<th>State</th>
+								<th>Reference result</th>
+								<th>Adjudication</th>
+							</tr>
+						</thead>
+						<tbody>
+							<For
+								each={records()}
+								fallback={
+									<tr>
+										<td colSpan={4}>
+											No fixture records in this browser session.
+										</td>
+									</tr>
+								}
+							>
+								{(record) => (
+									<tr>
+										<td>
+											<b>{record.run.runId}</b>
+											<small>
+												{record.fixture.corpusId} · {record.fixture.caseId} · r
+												{record.fixture.revision}
+											</small>
+										</td>
+										<td>{formatRunStatus(record.run.status)}</td>
+										<td>
+											{record.result
+												? `${record.result.quantity}: ${record.result.value} ${record.result.units}`
+												: "Unavailable"}
+										</td>
+										<td>
+											{record.verification
+												? formatVerificationStatus(record.verification.status)
+												: "Unavailable"}
+										</td>
+									</tr>
+								)}
+							</For>
+						</tbody>
+					</table>
+					<Show when={records()[0]}>
+						{(record) => (
+							<aside class="run-detail is-compact">
+								<p class="section-label">Latest recorded evidence</p>
+								<h2>{record().run.runId}</h2>
+								<p class="detail-phase">
+									{
+										(record().resultProvenance ?? record().referenceProvenance)
+											.claimBoundary
+									}
+								</p>
+								<section>
+									<h3>Reference solution</h3>
+									<p>
+										{
+											(
+												record().resultProvenance ??
+												record().referenceProvenance
+											).referenceSolution.modelId
+										}{" "}
+										·{" "}
+										{
+											(
+												record().resultProvenance ??
+												record().referenceProvenance
+											).referenceSolution.solverConfigurationId
+										}{" "}
+										·{" "}
+										{
+											(
+												record().resultProvenance ??
+												record().referenceProvenance
+											).referenceSolution.discretizationId
+										}
+									</p>
+								</section>
+								<Show when={record().adjudicationProvenance}>
+									{(provenance) => (
+										<section>
+											<h3>Fixture adjudication scope</h3>
+											<p>{provenance().claimBoundary}</p>
+										</section>
+									)}
+								</Show>
+								<Show when={record().adjudicationProvenance?.surrogate}>
+									{(surrogate) => (
+										<section>
+											<h3>Surrogate</h3>
+											<p>
+												{surrogate().modelId} · {surrogate().domainId}
+											</p>
+										</section>
+									)}
+								</Show>
+								<section>
+									<h3>Session</h3>
+									<p>
+										Browser-session fixture record only; no solver execution,
+										persistence, or qualification claim.
+									</p>
+								</section>
+							</aside>
+						)}
+					</Show>
+					<Show when={error()}>
+						{(message) => <p role="alert">{message()}</p>}
+					</Show>
+				</div>
+			</section>
+		</main>
 	);
 }
 
 function formatVerificationStatus(
 	status: FixtureVerification["status"],
 ): string {
-	return `${status[0].toUpperCase()}${status.slice(1)} fixture comparison`;
+	return `${status[0].toUpperCase()}${status.slice(1)} fixture adjudication`;
 }
 
 function formatRunStatus(status: ReferenceRun["status"]): string {

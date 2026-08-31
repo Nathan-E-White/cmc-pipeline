@@ -13,6 +13,9 @@ docker --context orbstack build --tag cmc-reference-solver:test --file container
 bash reference/tests/reference_container_test.sh
 ```
 
+The container test first runs the focused reversible-cohesive orchestration
+checks with local tool adapters, then rebuilds and exercises the solver image.
+
 The Dockerfile pins the official DOLFINx multi-architecture manifest by digest.
 It installs Gmsh and its C++ headers, builds the C++20 `mesh-audit` executable,
 runs its CTest suite, and smoke-tests the V1 and prescribed-traction V2

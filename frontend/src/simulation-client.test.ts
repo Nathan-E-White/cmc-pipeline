@@ -2,6 +2,26 @@ import { expect, test } from "bun:test";
 
 import { createSimulationClient } from "./simulation-client";
 
+const envelope = {
+	api_version: "v1",
+	fixture: {
+		case_id: "sic-sic-panel-042",
+		corpus_id: "v1-demo-2026-08",
+		kind: "representative",
+		revision: "1",
+	},
+	provenance: {
+		claim_boundary:
+			"Comparison evidence within the declared numerical model; not experimental truth or a qualified structural prediction.",
+		reference_solution: {
+			discretization_id: "demo-mesh-r1",
+			model_id: "demo-cmc-fracture-model",
+			solver_configuration_id: "demo-config-r1",
+		},
+		source_kind: "fixture",
+	},
+};
+
 test("submits a declared fixture reference run through the API transport", async () => {
 	const requests: unknown[] = [];
 	const client = createSimulationClient({
@@ -10,9 +30,7 @@ test("submits a declared fixture reference run through the API transport", async
 			return {
 				status: 202,
 				body: {
-					api_version: "v1",
-					fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
-					provenance: { source_kind: "fixture" },
+					...envelope,
 					run: {
 						run_id: "run-0001",
 						case_id: "sic-sic-panel-042",
@@ -47,8 +65,21 @@ test("submits a declared fixture reference run through the API transport", async
 		},
 	]);
 	expect(response).toEqual({
-		fixture: { corpusId: "v1-demo-2026-08", kind: "representative" },
-		provenance: { sourceKind: "fixture" },
+		fixture: {
+			caseId: "sic-sic-panel-042",
+			corpusId: "v1-demo-2026-08",
+			kind: "representative",
+			revision: "1",
+		},
+		provenance: {
+			claimBoundary: envelope.provenance.claim_boundary,
+			referenceSolution: {
+				discretizationId: "demo-mesh-r1",
+				modelId: "demo-cmc-fracture-model",
+				solverConfigurationId: "demo-config-r1",
+			},
+			sourceKind: "fixture",
+		},
 		run: { runId: "run-0001", caseId: "sic-sic-panel-042", status: "queued" },
 	});
 });
@@ -58,9 +89,7 @@ test("rejects a reference-run submission response that is not queued", async () 
 		request: async () => ({
 			status: 202,
 			body: {
-				api_version: "v1",
-				fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
-				provenance: { source_kind: "fixture" },
+				...envelope,
 				run: {
 					run_id: "run-0001",
 					case_id: "sic-sic-panel-042",
@@ -73,6 +102,27 @@ test("rejects a reference-run submission response that is not queued", async () 
 	await expect(
 		client.submitReferenceRun(referenceRunSubmission),
 	).rejects.toThrow("Fixture reference-run response was malformed.");
+});
+
+test("rejects a response that drops required V1 provenance", async () => {
+	const client = createSimulationClient({
+		request: async () => ({
+			status: 202,
+			body: {
+				...envelope,
+				provenance: { source_kind: "fixture" },
+				run: {
+					run_id: "run-0001",
+					case_id: "sic-sic-panel-042",
+					status: "queued",
+				},
+			},
+		}),
+	});
+
+	await expect(
+		client.submitReferenceRun(referenceRunSubmission),
+	).rejects.toThrow("Fixture response was malformed.");
 });
 
 test("rejects a reference-run submission response without the common envelope", async () => {
@@ -91,7 +141,7 @@ test("rejects a reference-run submission response without the common envelope", 
 
 	await expect(
 		client.submitReferenceRun(referenceRunSubmission),
-	).rejects.toThrow("Fixture reference-run response was malformed.");
+	).rejects.toThrow("Fixture response was malformed.");
 });
 
 test("observes a fixture run and reads its representative result through the API transport", async () => {
@@ -103,9 +153,7 @@ test("observes a fixture run and reads its representative result through the API
 				return {
 					status: 200,
 					body: {
-						api_version: "v1",
-						fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
-						provenance: { source_kind: "fixture" },
+						...envelope,
 						result: {
 							quantity: "j_integral_proxy",
 							value: 12.4,
@@ -117,9 +165,7 @@ test("observes a fixture run and reads its representative result through the API
 			return {
 				status: 200,
 				body: {
-					api_version: "v1",
-					fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
-					provenance: { source_kind: "fixture" },
+					...envelope,
 					run: {
 						run_id: "run-0001",
 						case_id: "sic-sic-panel-042",
@@ -146,6 +192,23 @@ test("observes a fixture run and reads its representative result through the API
 	]);
 });
 
+test("rejects missing provenance on a reference result", async () => {
+	const client = createSimulationClient({
+		request: async () => ({
+			status: 200,
+			body: {
+				...envelope,
+				provenance: { source_kind: "fixture" },
+				result: { quantity: "j_integral_proxy", units: "J/m²", value: 12.4 },
+			},
+		}),
+	});
+
+	await expect(client.getReferenceRunResult("run-0001")).rejects.toThrow(
+		"Fixture response was malformed.",
+	);
+});
+
 test("submits a declared fixture surrogate observation through the API transport", async () => {
 	const requests: unknown[] = [];
 	const client = createSimulationClient({
@@ -154,12 +217,12 @@ test("submits a declared fixture surrogate observation through the API transport
 			return {
 				status: 201,
 				body: {
-					api_version: "v1",
-					fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
+					...envelope,
 					provenance: {
+						...envelope.provenance,
 						claim_boundary:
 							"Fixture adjudication only; not independent physical validation or qualification.",
-						source_kind: "fixture",
+						surrogate: { domain_id: "demo-domain-r1", model_id: "demo-fno-r1" },
 					},
 					verification: {
 						quantity: "j_integral_proxy",
@@ -189,6 +252,7 @@ test("submits a declared fixture surrogate observation through the API transport
 		provenance: {
 			claimBoundary:
 				"Fixture adjudication only; not independent physical validation or qualification.",
+			surrogate: { domainId: "demo-domain-r1", modelId: "demo-fno-r1" },
 		},
 		verification: { status: "accepted", verificationId: "verification-0001" },
 	});
@@ -211,6 +275,38 @@ test("submits a declared fixture surrogate observation through the API transport
 			},
 		},
 	]);
+});
+
+test("rejects malformed optional surrogate provenance", async () => {
+	const client = createSimulationClient({
+		request: async () => ({
+			status: 201,
+			body: {
+				...envelope,
+				provenance: {
+					...envelope.provenance,
+					surrogate: { domain_id: "demo-domain-r1", model_id: 42 },
+				},
+				verification: {
+					quantity: "j_integral_proxy",
+					reference_value: 12.4,
+					relative_error: 0.0242,
+					status: "accepted",
+					surrogate_value: 12.1,
+					units: "J/m²",
+					verification_id: "verification-0001",
+				},
+			},
+		}),
+	});
+
+	await expect(
+		client.verifySurrogateObservation("run-0001", referenceRunSubmission, {
+			quantity: "j_integral_proxy",
+			units: "J/m²",
+			value: 12.1,
+		}),
+	).rejects.toThrow("Fixture response was malformed.");
 });
 
 const referenceRunSubmission = {

@@ -17,11 +17,27 @@ export type ReferenceRun = {
 
 export type FixtureDescriptor = {
 	corpusId: string;
+	caseId: string;
 	kind: "representative";
+	revision: string;
+};
+
+export type ReferenceSolutionProvenance = {
+	discretizationId: string;
+	modelId: string;
+	solverConfigurationId: string;
+};
+
+export type SurrogateProvenance = {
+	domainId: string;
+	modelId: string;
 };
 
 export type FixtureProvenance = {
+	claimBoundary: string;
+	referenceSolution: ReferenceSolutionProvenance;
 	sourceKind: "fixture";
+	surrogate?: SurrogateProvenance;
 };
 
 export type ReferenceRunSubmissionResponse = {
@@ -61,7 +77,7 @@ export type FixtureVerification = {
 
 export type FixtureVerificationResponse = {
 	fixture: FixtureDescriptor;
-	provenance: FixtureProvenance & { claimBoundary: string };
+	provenance: FixtureProvenance;
 	verification: FixtureVerification;
 };
 
@@ -216,24 +232,14 @@ function parseReferenceRun(
 	body: unknown,
 	allowedStatuses: ReferenceRun["status"][],
 ): ReferenceRunSubmissionResponse {
-	if (
-		!isRecord(body) ||
-		body.api_version !== "v1" ||
-		!isRecord(body.fixture) ||
-		!isRecord(body.provenance) ||
-		!isRecord(body.run)
-	) {
+	const envelope = parseEnvelope(body);
+	if (!isRecord(body) || !isRecord(body.run)) {
 		throw new SimulationApiError(
 			"Fixture reference-run response was malformed.",
 		);
 	}
-	const { corpus_id: corpusId, kind } = body.fixture;
-	const { source_kind: sourceKind } = body.provenance;
 	const { case_id: caseId, run_id: runId, status } = body.run;
 	if (
-		typeof corpusId !== "string" ||
-		kind !== "representative" ||
-		sourceKind !== "fixture" ||
 		typeof caseId !== "string" ||
 		typeof runId !== "string" ||
 		!isReferenceRunStatus(status) ||
@@ -244,31 +250,20 @@ function parseReferenceRun(
 		);
 	}
 	return {
-		fixture: { corpusId, kind },
-		provenance: { sourceKind },
+		...envelope,
 		run: { caseId, runId, status },
 	};
 }
 
 function parseReferenceRunResult(body: unknown): ReferenceRunResultResponse {
-	if (
-		!isRecord(body) ||
-		body.api_version !== "v1" ||
-		!isRecord(body.fixture) ||
-		!isRecord(body.provenance) ||
-		!isRecord(body.result)
-	) {
+	const envelope = parseEnvelope(body);
+	if (!isRecord(body) || !isRecord(body.result)) {
 		throw new SimulationApiError(
 			"Fixture reference-run result response was malformed.",
 		);
 	}
-	const { corpus_id: corpusId, kind } = body.fixture;
-	const { source_kind: sourceKind } = body.provenance;
 	const { quantity, units, value } = body.result;
 	if (
-		typeof corpusId !== "string" ||
-		kind !== "representative" ||
-		sourceKind !== "fixture" ||
 		typeof quantity !== "string" ||
 		typeof units !== "string" ||
 		typeof value !== "number"
@@ -278,27 +273,18 @@ function parseReferenceRunResult(body: unknown): ReferenceRunResultResponse {
 		);
 	}
 	return {
-		fixture: { corpusId, kind },
-		provenance: { sourceKind },
+		...envelope,
 		result: { quantity, units, value },
 	};
 }
 
 function parseFixtureVerification(body: unknown): FixtureVerificationResponse {
-	if (
-		!isRecord(body) ||
-		body.api_version !== "v1" ||
-		!isRecord(body.fixture) ||
-		!isRecord(body.provenance) ||
-		!isRecord(body.verification)
-	) {
+	const envelope = parseEnvelope(body);
+	if (!isRecord(body) || !isRecord(body.verification)) {
 		throw new SimulationApiError(
 			"Fixture verification response was malformed.",
 		);
 	}
-	const { corpus_id: corpusId, kind } = body.fixture;
-	const { claim_boundary: claimBoundary, source_kind: sourceKind } =
-		body.provenance;
 	const {
 		quantity,
 		reference_value: referenceValue,
@@ -309,10 +295,6 @@ function parseFixtureVerification(body: unknown): FixtureVerificationResponse {
 		verification_id: verificationId,
 	} = body.verification;
 	if (
-		typeof corpusId !== "string" ||
-		kind !== "representative" ||
-		sourceKind !== "fixture" ||
-		typeof claimBoundary !== "string" ||
 		typeof verificationId !== "string" ||
 		!isVerificationStatus(status) ||
 		typeof quantity !== "string" ||
@@ -326,8 +308,7 @@ function parseFixtureVerification(body: unknown): FixtureVerificationResponse {
 		);
 	}
 	return {
-		fixture: { corpusId, kind },
-		provenance: { claimBoundary, sourceKind },
+		...envelope,
 		verification: {
 			quantity,
 			referenceValue,
@@ -338,6 +319,67 @@ function parseFixtureVerification(body: unknown): FixtureVerificationResponse {
 			verificationId,
 		},
 	};
+}
+
+function parseEnvelope(body: unknown): {
+	fixture: FixtureDescriptor;
+	provenance: FixtureProvenance;
+} {
+	if (
+		!isRecord(body) ||
+		body.api_version !== "v1" ||
+		!isRecord(body.fixture) ||
+		!isRecord(body.provenance)
+	) {
+		throw new SimulationApiError("Fixture response was malformed.");
+	}
+	const { case_id: caseId, corpus_id: corpusId, kind, revision } = body.fixture;
+	const {
+		claim_boundary: claimBoundary,
+		reference_solution: referenceSolution,
+		source_kind: sourceKind,
+		surrogate,
+	} = body.provenance;
+	if (
+		typeof corpusId !== "string" ||
+		typeof caseId !== "string" ||
+		typeof revision !== "string" ||
+		kind !== "representative" ||
+		sourceKind !== "fixture" ||
+		typeof claimBoundary !== "string" ||
+		!isRecord(referenceSolution) ||
+		typeof referenceSolution.model_id !== "string" ||
+		typeof referenceSolution.solver_configuration_id !== "string" ||
+		typeof referenceSolution.discretization_id !== "string"
+	) {
+		throw new SimulationApiError("Fixture response was malformed.");
+	}
+	const decodedSurrogate = decodeSurrogate(surrogate);
+	return {
+		fixture: { caseId, corpusId, kind, revision },
+		provenance: {
+			claimBoundary,
+			referenceSolution: {
+				discretizationId: referenceSolution.discretization_id,
+				modelId: referenceSolution.model_id,
+				solverConfigurationId: referenceSolution.solver_configuration_id,
+			},
+			sourceKind,
+			...(decodedSurrogate ? { surrogate: decodedSurrogate } : {}),
+		},
+	};
+}
+
+function decodeSurrogate(value: unknown): SurrogateProvenance | undefined {
+	if (value === undefined) return undefined;
+	if (
+		!isRecord(value) ||
+		typeof value.domain_id !== "string" ||
+		typeof value.model_id !== "string"
+	) {
+		throw new SimulationApiError("Fixture response was malformed.");
+	}
+	return { domainId: value.domain_id, modelId: value.model_id };
 }
 
 function isReferenceRunStatus(value: unknown): value is ReferenceRun["status"] {

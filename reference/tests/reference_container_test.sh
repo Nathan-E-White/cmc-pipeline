@@ -3,6 +3,7 @@ set -euo pipefail
 
 context="${DOCKER_CONTEXT:-orbstack}"
 image="${REFERENCE_SOLVER_IMAGE:-cmc-reference-solver:test}"
+python3 reference/tests/validate_reversible_cohesive_convergence_orchestration.py
 output_dir="$(mktemp -d)"
 bridged_output_dir="$(mktemp -d)"
 trap 'rm -rf "${output_dir}" "${bridged_output_dir}"' EXIT

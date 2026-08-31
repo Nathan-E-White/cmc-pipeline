@@ -19,11 +19,21 @@ bun install
 bun run dev
 ```
 
+## Production composition
+
+The frontend and fixture backend are independently runnable modules. Deploy the
+frontend's static or SSR process separately from the FastAPI process, then put
+a reverse proxy in front of both: serve browser assets from the frontend target
+and forward same-origin `/api/v1` requests to the fixture backend. The browser
+therefore retains the V1 relative `/api/v1` interface without a CORS policy or
+an implication that the backend runs inside the frontend process.
+
 Run the delivery checks before treating a change as complete:
 
 ```sh
 cd backend && .venv/bin/python -m pytest && .venv/bin/ruff check app tests
 cd frontend && bun run test && bunx tsc --noEmit && bun run check && bun run build
+python3 reference/tests/validate_reversible_cohesive_convergence_orchestration.py
 ```
 
 ## What V1 demonstrates
