@@ -36,27 +36,43 @@ def _script(path: Path, source: str) -> Path:
     return path
 
 
-def _run(statuses: dict[str, str]) -> tuple[dict, Path]:
+def _run(
+    statuses: dict[str, str], *, tool_failures: dict[str, str] | None = None
+) -> tuple[dict, Path]:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         card = root / "case.json"
         card.write_text(json.dumps(CARD), encoding="utf-8")
         (root / "statuses.json").write_text(json.dumps(statuses), encoding="utf-8")
+        (root / "tool-failures.json").write_text(
+            json.dumps(tool_failures or {}), encoding="utf-8"
+        )
         generator = _script(
             root / "generator.py",
             """#!/usr/bin/env python3
-import pathlib, sys
-args=sys.argv; pathlib.Path(args[args.index('--output')+1]).write_text('mesh'); pathlib.Path(args[args.index('--crack-face-pairs-output')+1]).write_text('{}')
+import json, pathlib, sys
+args=sys.argv; output=pathlib.Path(args[args.index('--output')+1]); failures=json.loads(pathlib.Path(__file__).with_name('tool-failures.json').read_text())
+if failures.get(output.parent.name) == 'generator': raise SystemExit(2)
+output.write_text('mesh'); pathlib.Path(args[args.index('--crack-face-pairs-output')+1]).write_text('{}')
 """,
         )
         audit = _script(
             root / "audit.py",
             """#!/usr/bin/env python3
 import json, pathlib, sys
+mesh=pathlib.Path(sys.argv[1]); failures=json.loads(pathlib.Path(__file__).with_name('tool-failures.json').read_text())
+if failures.get(mesh.parent.name) == 'audit': raise SystemExit(2)
 pathlib.Path(sys.argv[2]).write_text(json.dumps({'mesh': {'kind': 'fixture'}}))
 """,
         )
-        validator = _script(root / "validator.py", "#!/usr/bin/env python3\n")
+        validator = _script(
+            root / "validator.py",
+            """#!/usr/bin/env python3
+import json, pathlib, sys
+mesh=pathlib.Path(sys.argv[sys.argv.index('--mesh')+1]); failures=json.loads(pathlib.Path(__file__).with_name('tool-failures.json').read_text())
+if failures.get(mesh.parent.name) == 'validator': raise SystemExit(2)
+""",
+        )
         program = _script(
             root / "program.py",
             """#!/usr/bin/env python3
@@ -73,8 +89,10 @@ output.mkdir(parents=True, exist_ok=True); (output/'reversible-cohesive-program.
         visualizer = _script(
             root / "visualizer.py",
             """#!/usr/bin/env python3
-import pathlib, sys
-args=sys.argv; pathlib.Path(args[args.index('--output')+1]).write_text('<svg/>')
+import json, pathlib, sys
+args=sys.argv; mesh=pathlib.Path(args[args.index('--mesh')+1]); failures=json.loads(pathlib.Path(__file__).with_name('tool-failures.json').read_text())
+if failures.get(mesh.parent.name) == 'visualizer': raise SystemExit(2)
+pathlib.Path(args[args.index('--output')+1]).write_text('<svg/>')
 """,
         )
         output = root / "output"
@@ -127,9 +145,35 @@ def test_runner_reported_failure_marks_the_case_failed() -> None:
     assert payload["levels"][1]["status"] == "failed"
 
 
+def test_tool_failure_marks_only_its_level_and_later_levels_still_run() -> None:
+    payload, _ = _run(
+        {"coarse": "solved", "medium": "solved", "fine": "solved"},
+        tool_failures={"coarse": "generator"},
+    )
+    assert payload["status"] == "failed"
+    assert [level["status"] for level in payload["levels"]] == [
+        "failed",
+        "solved",
+        "solved",
+    ]
+    assert payload["comparison"]["status"] == "unavailable"
+
+
+def test_visualizer_failure_preserves_numerical_evidence() -> None:
+    payload, _ = _run(
+        {"coarse": "solved", "medium": "solved", "fine": "solved"},
+        tool_failures={"medium": "visualizer"},
+    )
+    assert payload["status"] == "solved"
+    assert payload["comparison"]["status"] == "computed"
+    assert payload["artifacts"]["case_visual"]["status"] == "failed"
+
+
 if __name__ == "__main__":
     test_successful_levels_produce_a_solved_artifact()
     test_missing_program_artifact_marks_the_level_and_case_failed()
     test_incomplete_solved_program_remains_indeterminate()
     test_malformed_solved_metrics_remain_indeterminate()
     test_runner_reported_failure_marks_the_case_failed()
+    test_tool_failure_marks_only_its_level_and_later_levels_still_run()
+    test_visualizer_failure_preserves_numerical_evidence()

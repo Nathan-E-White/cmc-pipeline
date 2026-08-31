@@ -16,9 +16,18 @@ from pathlib import Path
 
 
 def write_json(path: Path, payload: dict) -> None:
-    path.write_text(
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    temporary.replace(path)
+
+
+def tool_failure(completed: subprocess.CompletedProcess[str], tool: str) -> str | None:
+    if completed.returncode == 0:
+        return None
+    detail = completed.stderr.strip() or completed.stdout.strip()
+    return detail or f"{tool} exited with status {completed.returncode}"
 
 
 def percent_change(left: float, right: float) -> float:
@@ -162,15 +171,53 @@ class ReversibleCohesiveConvergence:
             check=False,
         )
         program_path = directory / "reversible-cohesive-program.json"
-        if program_path.is_file():
+        if completed.returncode != 0 or not program_path.is_file():
+            return {
+                "status": "failed",
+                "failure": "program runner did not write an artifact"
+                + (
+                    f": {detail}"
+                    if (detail := tool_failure(completed, "program runner"))
+                    else ""
+                ),
+                "attempts": [],
+                "accepted_increments": [],
+            }
+        try:
             return json.loads(program_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {
+                "status": "indeterminate",
+                "failure": "program runner wrote malformed JSON evidence",
+                "attempts": [],
+                "accepted_increments": [],
+            }
+
+    def _run_tool(self, command: list[str], tool: str) -> str | None:
+        try:
+            completed = subprocess.run(command, text=True, capture_output=True, check=False)
+        except OSError as error:
+            return f"{tool} could not start: {error}"
+        return tool_failure(completed, tool)
+
+    @staticmethod
+    def _failed_level(
+        name: str, level: dict, failure: str, *, mesh: dict | None = None
+    ) -> dict:
         return {
+            "name": name,
+            "near_tip_mm": level["near_tip_mm"],
+            "far_field_mm": level["far_field_mm"],
             "status": "failed",
-            "failure": completed.stderr.strip()
-            or completed.stdout.strip()
-            or "program runner did not write an artifact",
-            "attempts": [],
-            "accepted_increments": [],
+            "program_status": "unavailable",
+            "mesh": mesh,
+            "program": {
+                "status": "unavailable",
+                "failure": failure,
+                "attempts": [],
+                "accepted_increments": [],
+            },
+            "metrics": None,
         }
 
     def _level(self, card: dict, name: str, level: dict, directory: Path) -> dict:
@@ -178,7 +225,7 @@ class ReversibleCohesiveConvergence:
         mesh = directory / f"{card['case_id']}.msh"
         pairs = directory / "crack-face-pairs.json"
         audit = directory / "mesh-audit.json"
-        subprocess.run(
+        failure = self._run_tool(
             [
                 "python3",
                 str(self._tools.generator),
@@ -193,10 +240,22 @@ class ReversibleCohesiveConvergence:
                 "--crack-face-pairs-output",
                 str(pairs),
             ],
-            check=True,
+            "mesh generator",
         )
-        subprocess.run([str(self._tools.mesh_audit), str(mesh), str(audit)], check=True)
-        subprocess.run(
+        if failure is not None:
+            return self._failed_level(name, level, failure)
+        failure = self._run_tool(
+            [str(self._tools.mesh_audit), str(mesh), str(audit)], "mesh audit"
+        )
+        if failure is not None:
+            return self._failed_level(name, level, failure)
+        try:
+            mesh_record = json.loads(audit.read_text(encoding="utf-8"))["mesh"]
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+            return self._failed_level(
+                name, level, "mesh audit did not write a usable mesh record"
+            )
+        failure = self._run_tool(
             [
                 "python3",
                 str(self._tools.artifact_validator),
@@ -205,8 +264,10 @@ class ReversibleCohesiveConvergence:
                 "--pairs",
                 str(pairs),
             ],
-            check=True,
+            "opened-crack artifact validator",
         )
+        if failure is not None:
+            return self._failed_level(name, level, failure, mesh=mesh_record)
         program = self._program(directory, mesh, pairs)
         metrics = solved_metrics(program)
         level_status = (
@@ -220,7 +281,7 @@ class ReversibleCohesiveConvergence:
             "far_field_mm": level["far_field_mm"],
             "status": level_status,
             "program_status": program["status"],
-            "mesh": json.loads(audit.read_text(encoding="utf-8"))["mesh"],
+            "mesh": mesh_record,
             "program": program,
             "metrics": metrics,
         }
@@ -278,7 +339,7 @@ class ReversibleCohesiveConvergence:
                 },
                 "energy_closure": fine["energy_closure"],
             }
-        subprocess.run(
+        visual_failure = self._run_tool(
             [
                 "python3",
                 str(self._tools.visualizer),
@@ -289,7 +350,7 @@ class ReversibleCohesiveConvergence:
                 "--case-card",
                 str(self._tools.case_card),
             ],
-            check=True,
+            "case visualizer",
         )
         return {
             "case_id": card["case_id"],
@@ -298,6 +359,17 @@ class ReversibleCohesiveConvergence:
             "levels": levels,
             "comparison": comparison,
             "acceptance": acceptance_summary(card, status, comparison),
+            "artifacts": {
+                "case_visual": (
+                    {"status": "available", "path": "case-visual.svg"}
+                    if visual_failure is None
+                    else {
+                        "status": "failed",
+                        "path": "case-visual.svg",
+                        "failure": visual_failure,
+                    }
+                )
+            },
             "adjudication": "synthetic reversible-cohesive numerical tracer; J is diagnostic only and no toughness or fracture-energy authority is asserted.",
             "claim_boundary": card["claim_boundary"],
         }
