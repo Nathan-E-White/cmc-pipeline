@@ -24,6 +24,37 @@ const provenance = {
 test("submits, observes, and renders a representative fixture reference result", async () => {
 	const verificationRequests: unknown[][] = [];
 	const client = {
+		listFixtureCases: async () => ({
+			fixture: { corpusId: "v1-demo-2026-08", kind: "representative" as const },
+			provenance: {
+				claimBoundary: "Representative fixture metadata only.",
+				sourceKind: "fixture" as const,
+			},
+			cases: [
+				{
+					architecture: "sic_sic",
+					availability: {
+						adjudication: "available" as const,
+						mesh: "available" as const,
+					},
+					caseId: "sic-sic-panel-042",
+					label: "SiC/SiC panel 042",
+				},
+			],
+		}),
+		getFixtureCase: async () => ({
+			fixture,
+			provenance,
+			case: {
+				architecture: "sic_sic",
+				inputs: {
+					coatingShearLimitMpa: 60,
+					mechanicalLoadKn: 45,
+					thermalGradientCPerMm: 120,
+				},
+				label: "SiC/SiC panel 042",
+			},
+		}),
 		submitReferenceRun: async () => ({
 			fixture,
 			provenance,
@@ -73,14 +104,6 @@ test("submits, observes, and renders a representative fixture reference result",
 	render(() =>
 		createComponent(ReferenceRunControls, {
 			client,
-			submission: {
-				caseId: "sic-sic-panel-042",
-				inputs: {
-					coatingShearLimitMpa: 60,
-					mechanicalLoadKn: 45,
-					thermalGradientCPerMm: 120,
-				},
-			},
 		}),
 	);
 	expect(
@@ -90,6 +113,7 @@ test("submits, observes, and renders a representative fixture reference result",
 	const submit = screen.getByRole<HTMLButtonElement>("button", {
 		name: "Record fixture reference run",
 	});
+	await waitFor(() => expect(submit.disabled).toBe(false));
 	submit.click();
 	await waitFor(() => {
 		expect(screen.getByText("Complete fixture reference run")).toBeTruthy();

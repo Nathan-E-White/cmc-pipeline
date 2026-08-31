@@ -7,17 +7,5 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-	return (
-		<ReferenceRunControls
-			client={simulationClient}
-			submission={{
-				caseId: "sic-sic-panel-042",
-				inputs: {
-					coatingShearLimitMpa: 60,
-					mechanicalLoadKn: 45,
-					thermalGradientCPerMm: 120,
-				},
-			}}
-		/>
-	);
+	return <ReferenceRunControls client={simulationClient} />;
 }

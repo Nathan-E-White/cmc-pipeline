@@ -1,7 +1,9 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 
 import { declaredFixtureSurrogateObservation } from "../fixture-surrogate";
 import type {
+	FixtureCaseResponse,
+	FixtureCaseSummary,
 	FixtureDescriptor,
 	FixtureProvenance,
 	FixtureVerification,
@@ -11,7 +13,7 @@ import type {
 	SimulationClient,
 } from "../simulation-client";
 
-type Props = { client: SimulationClient; submission: ReferenceRunSubmission };
+type Props = { client: SimulationClient };
 
 type RegisterRecord = {
 	adjudicationProvenance?: FixtureProvenance;
@@ -27,12 +29,52 @@ export function ReferenceRunControls(props: Props) {
 	const [records, setRecords] = createSignal<RegisterRecord[]>([]);
 	const [error, setError] = createSignal<string>();
 	const [isSubmitting, setIsSubmitting] = createSignal(false);
+	const [cases, setCases] = createSignal<FixtureCaseSummary[]>([]);
+	const [selectedCase, setSelectedCase] = createSignal<FixtureCaseResponse>();
+	const [selectedCaseId, setSelectedCaseId] = createSignal<string>();
+	const [isLoadingCase, setIsLoadingCase] = createSignal(true);
+
+	const loadCase = async (caseId: string) => {
+		setSelectedCaseId(caseId);
+		setSelectedCase(undefined);
+		setIsLoadingCase(true);
+		try {
+			const detail = await props.client.getFixtureCase(caseId);
+			if (selectedCaseId() === caseId) setSelectedCase(detail);
+		} catch {
+			if (selectedCaseId() === caseId)
+				setError("The declared fixture case could not be loaded.");
+		} finally {
+			if (selectedCaseId() === caseId) setIsLoadingCase(false);
+		}
+	};
+
+	onMount(async () => {
+		try {
+			const catalog = await props.client.listFixtureCases();
+			setCases(catalog.cases);
+			const initial = catalog.cases.find(
+				(caseSummary) => caseSummary.availability.adjudication === "available",
+			);
+			if (initial) await loadCase(initial.caseId);
+			else setIsLoadingCase(false);
+		} catch {
+			setError("The fixture case catalog could not be loaded.");
+			setIsLoadingCase(false);
+		}
+	});
 
 	const submit = async () => {
+		const detail = selectedCase();
+		if (!detail) return;
+		const submission: ReferenceRunSubmission = {
+			caseId: detail.fixture.caseId,
+			inputs: detail.case.inputs,
+		};
 		setError(undefined);
 		setIsSubmitting(true);
 		try {
-			const submitted = await props.client.submitReferenceRun(props.submission);
+			const submitted = await props.client.submitReferenceRun(submission);
 			const observed = await props.client.getReferenceRun(submitted.run.runId);
 			const record: RegisterRecord = {
 				fixture: observed.fixture,
@@ -45,7 +87,7 @@ export function ReferenceRunControls(props: Props) {
 				);
 				const verification = await props.client.verifySurrogateObservation(
 					observed.run.runId,
-					props.submission,
+					submission,
 					declaredFixtureSurrogateObservation(),
 				);
 				record.result = result.result;
@@ -80,7 +122,33 @@ export function ReferenceRunControls(props: Props) {
 						Each row is an in-memory V1 fixture record. Completion and
 						adjudication remain declared fixture outcomes.
 					</p>
-					<button disabled={isSubmitting()} onClick={submit} type="button">
+					<label class="fixture-selector">
+						Declared fixture
+						<select
+							disabled={isLoadingCase() || isSubmitting()}
+							value={selectedCaseId()}
+							onChange={(event) => void loadCase(event.currentTarget.value)}
+						>
+							<For each={cases()}>
+								{(caseSummary) => (
+									<option
+										disabled={
+											caseSummary.availability.adjudication !== "available"
+										}
+										value={caseSummary.caseId}
+									>
+										{caseSummary.label} · adjudication{" "}
+										{caseSummary.availability.adjudication}
+									</option>
+								)}
+							</For>
+						</select>
+					</label>
+					<button
+						disabled={isSubmitting() || isLoadingCase() || !selectedCase()}
+						onClick={submit}
+						type="button"
+					>
 						{isSubmitting()
 							? "Recording fixture run…"
 							: "Record fixture reference run"}

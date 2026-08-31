@@ -40,6 +40,33 @@ export type FixtureProvenance = {
 	surrogate?: SurrogateProvenance;
 };
 
+export type FixtureCatalogProvenance = {
+	claimBoundary: string;
+	sourceKind: "fixture";
+};
+
+export type FixtureCaseSummary = {
+	architecture: string;
+	availability: {
+		adjudication: "available" | "unavailable";
+		mesh: "available" | "unavailable";
+	};
+	caseId: string;
+	label: string;
+};
+
+export type FixtureCatalogResponse = {
+	cases: FixtureCaseSummary[];
+	fixture: { corpusId: string; kind: "representative" };
+	provenance: FixtureCatalogProvenance;
+};
+
+export type FixtureCaseResponse = {
+	case: { architecture: string; inputs: FixtureInputs; label: string };
+	fixture: FixtureDescriptor;
+	provenance: FixtureProvenance;
+};
+
 export type ReferenceRunSubmissionResponse = {
 	fixture: FixtureDescriptor;
 	provenance: FixtureProvenance;
@@ -97,6 +124,8 @@ export type HttpTransport = {
 };
 
 export type SimulationClient = {
+	listFixtureCases: () => Promise<FixtureCatalogResponse>;
+	getFixtureCase: (caseId: string) => Promise<FixtureCaseResponse>;
 	submitReferenceRun: (
 		submission: ReferenceRunSubmission,
 	) => Promise<ReferenceRunSubmissionResponse>;
@@ -120,6 +149,28 @@ export function createSimulationClient(
 	transport: HttpTransport,
 ): SimulationClient {
 	return {
+		listFixtureCases: async (): Promise<FixtureCatalogResponse> => {
+			const response = await transport.request({
+				method: "GET",
+				path: "/api/v1/cases",
+				body: undefined,
+			});
+			if (response.status !== 200) {
+				throw new SimulationApiError("Fixture case catalog was unavailable.");
+			}
+			return parseFixtureCatalog(response.body);
+		},
+		getFixtureCase: async (caseId): Promise<FixtureCaseResponse> => {
+			const response = await transport.request({
+				method: "GET",
+				path: `/api/v1/cases/${caseId}`,
+				body: undefined,
+			});
+			if (response.status !== 200) {
+				throw new SimulationApiError("Fixture case detail was unavailable.");
+			}
+			return parseFixtureCase(response.body);
+		},
 		submitReferenceRun: async (
 			submission: ReferenceRunSubmission,
 		): Promise<ReferenceRunSubmissionResponse> => {
@@ -204,6 +255,86 @@ export function createSimulationClient(
 				);
 			}
 			return parseFixtureVerification(response.body);
+		},
+	};
+}
+
+function parseFixtureCatalog(body: unknown): FixtureCatalogResponse {
+	if (
+		!isRecord(body) ||
+		body.api_version !== "v1" ||
+		!isRecord(body.fixture) ||
+		!isRecord(body.provenance) ||
+		!Array.isArray(body.cases)
+	) {
+		throw new SimulationApiError("Fixture case catalog was malformed.");
+	}
+	const { corpus_id: corpusId, kind } = body.fixture;
+	const { claim_boundary: claimBoundary, source_kind: sourceKind } =
+		body.provenance;
+	if (
+		typeof corpusId !== "string" ||
+		kind !== "representative" ||
+		sourceKind !== "fixture" ||
+		typeof claimBoundary !== "string"
+	) {
+		throw new SimulationApiError("Fixture case catalog was malformed.");
+	}
+	const cases = body.cases.map((entry) => {
+		if (
+			!isRecord(entry) ||
+			!isRecord(entry.availability) ||
+			typeof entry.case_id !== "string" ||
+			typeof entry.label !== "string" ||
+			typeof entry.architecture !== "string" ||
+			!isAvailability(entry.availability.adjudication) ||
+			!isAvailability(entry.availability.mesh)
+		) {
+			throw new SimulationApiError("Fixture case catalog was malformed.");
+		}
+		return {
+			caseId: entry.case_id,
+			label: entry.label,
+			architecture: entry.architecture,
+			availability: {
+				adjudication: entry.availability.adjudication,
+				mesh: entry.availability.mesh,
+			},
+		};
+	});
+	return {
+		fixture: { corpusId, kind },
+		provenance: { claimBoundary, sourceKind },
+		cases,
+	};
+}
+
+function parseFixtureCase(body: unknown): FixtureCaseResponse {
+	const envelope = parseEnvelope(body);
+	if (!isRecord(body) || !isRecord(body.case)) {
+		throw new SimulationApiError("Fixture case detail was malformed.");
+	}
+	const { architecture, inputs, label } = body.case;
+	if (
+		!isRecord(inputs) ||
+		typeof architecture !== "string" ||
+		typeof label !== "string" ||
+		!isFiniteNumber(inputs.coating_shear_limit_mpa) ||
+		!isFiniteNumber(inputs.mechanical_load_kn) ||
+		!isFiniteNumber(inputs.thermal_gradient_c_per_mm)
+	) {
+		throw new SimulationApiError("Fixture case detail was malformed.");
+	}
+	return {
+		...envelope,
+		case: {
+			architecture,
+			label,
+			inputs: {
+				coatingShearLimitMpa: inputs.coating_shear_limit_mpa,
+				mechanicalLoadKn: inputs.mechanical_load_kn,
+				thermalGradientCPerMm: inputs.thermal_gradient_c_per_mm,
+			},
 		},
 	};
 }
@@ -397,6 +528,14 @@ function isVerificationStatus(
 	return (
 		value === "accepted" || value === "rejected" || value === "indeterminate"
 	);
+}
+
+function isAvailability(value: unknown): value is "available" | "unavailable" {
+	return value === "available" || value === "unavailable";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -22,6 +22,64 @@ const envelope = {
 	},
 };
 
+test("decodes catalog metadata separately from declared fixture case provenance", async () => {
+	const client = createSimulationClient({
+		request: async ({ path }) =>
+			path === "/api/v1/cases"
+				? {
+						status: 200,
+						body: {
+							api_version: "v1",
+							fixture: { corpus_id: "v1-demo-2026-08", kind: "representative" },
+							provenance: {
+								claim_boundary: "Representative fixture metadata only.",
+								source_kind: "fixture",
+							},
+							cases: [
+								{
+									architecture: "sic_sic",
+									availability: {
+										adjudication: "available",
+										mesh: "available",
+									},
+									case_id: "sic-sic-panel-042",
+									label: "SiC/SiC panel 042",
+								},
+							],
+						},
+					}
+				: {
+						status: 200,
+						body: {
+							...envelope,
+							case: {
+								architecture: "sic_sic",
+								inputs: {
+									coating_shear_limit_mpa: 60,
+									mechanical_load_kn: 45,
+									thermal_gradient_c_per_mm: 120,
+								},
+								label: "SiC/SiC panel 042",
+							},
+						},
+					},
+	});
+
+	expect(await client.listFixtureCases()).toMatchObject({
+		cases: [
+			{
+				caseId: "sic-sic-panel-042",
+				availability: { adjudication: "available" },
+			},
+		],
+		provenance: { claimBoundary: "Representative fixture metadata only." },
+	});
+	expect(await client.getFixtureCase("sic-sic-panel-042")).toMatchObject({
+		case: { inputs: { mechanicalLoadKn: 45 } },
+		fixture: { revision: "1" },
+	});
+});
+
 test("submits a declared fixture reference run through the API transport", async () => {
 	const requests: unknown[] = [];
 	const client = createSimulationClient({
