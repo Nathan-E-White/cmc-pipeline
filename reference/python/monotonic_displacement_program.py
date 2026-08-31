@@ -191,6 +191,7 @@ class MonotonicDisplacementProgram:
         return self._artifact("indeterminate", attempts, accepted, "endpoint bisection iteration limit", 0)
 
     def _artifact(self, status, attempts, accepted, failure, cutbacks) -> dict[str, Any]:
+        self._add_work_and_energy_evidence(accepted)
         return {
             "status": status,
             "failure": failure,
@@ -201,3 +202,49 @@ class MonotonicDisplacementProgram:
             "accepted_increments": accepted,
             "consecutive_cutbacks_at_exit": cutbacks,
         }
+
+    @staticmethod
+    def _add_work_and_energy_evidence(accepted: list[dict[str, Any]]) -> None:
+        """Attach path work to accepted evidence without widening the solver seam.
+
+        The one-step adapter reports a reaction only.  This module owns the
+        monotonic path, so it is the one place that can form trapezoidal work
+        and compare the final stored energy quantities.  Sorting is required
+        because endpoint bisection deliberately revisits smaller displacements.
+        """
+        points = []
+        for item in accepted:
+            reaction = item["reaction"]
+            if reaction.get("status") != "computed":
+                continue
+            value = reaction.get("value_mpa_mm")
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
+                continue
+            points.append((float(item["top_displacement_mm"]), float(value), item))
+        points.sort(key=lambda point: point[0])
+        previous_displacement = 0.0
+        previous_reaction = 0.0
+        work = 0.0
+        for displacement, reaction, item in points:
+            work += 0.5 * (previous_reaction + reaction) * (displacement - previous_displacement)
+            item["external_work"] = {"status": "computed", "value_mpa_mm2": work,
+                                     "method": "trapezoidal-reaction-displacement"}
+            previous_displacement, previous_reaction = displacement, reaction
+        if not points:
+            return
+        # The accepted sequence identifies the terminal event; an earlier
+        # overshoot is intentionally retained as bisection evidence.
+        final = accepted[-1]
+        bulk = final["bulk_strain_energy"]
+        potential = final["reversible_interface_potential_mpa_mm2"]
+        external = final["external_work"]
+        if (bulk.get("status") != "computed" or not isinstance(potential, (int, float)) or
+                external.get("status") != "computed"):
+            return
+        stored = float(bulk["value_mpa_mm2"]) + float(potential)
+        work = float(external["value_mpa_mm2"])
+        mismatch = abs(work - stored) / max(abs(work), abs(stored), 1e-30) * 100.0
+        final["energy_closure"] = {"status": "computed", "external_work_mpa_mm2": work,
+                                   "bulk_plus_interface_mpa_mm2": stored,
+                                   "mismatch_percent": mismatch,
+                                   "required_max_percent": 1.0}

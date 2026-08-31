@@ -95,6 +95,14 @@ def test_solver_image_generates_and_validates_opened_crack_pair_artifacts_at_eve
         assert level in source
 
 
+def test_public_runner_and_container_validate_the_reversible_cohesive_convergence_artifact() -> None:
+    runner = (ROOT / "reference/scripts/reference-solver").read_text(encoding="utf-8")
+    container_test = (ROOT / "reference/tests/reference_container_test.sh").read_text(encoding="utf-8")
+    assert "converge-reversible-cohesive-case" in runner
+    assert "converge_reversible_cohesive_edge_crack.py" in runner
+    assert "validate_reversible_cohesive_convergence_artifact.py" in container_test
+
+
 def _validate_reversible_case(card: dict) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as directory:
         case_card = Path(directory) / "case.json"

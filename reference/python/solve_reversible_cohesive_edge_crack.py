@@ -20,7 +20,7 @@ from petsc4py import PETSc
 from bilinear_mode_i_opening_law import BilinearModeIOpeningLaw
 from opened_crack_mesh_artifacts import validate_exported_artifacts
 from paired_lip_assembler import PairedLipAssembler
-from solve_edge_crack import _stress
+from solve_edge_crack import _domain_integral_j, _stress
 
 
 def _node_dofs(V, domain, node_ids: set[int]) -> dict[int, tuple[int, int]]:
@@ -65,6 +65,11 @@ def _mouth_opening_mm(pair_map: dict, displacements: dict[int, tuple[float, floa
     minus = displacements[int(correspondence["minus_node_id"])]
     plus = displacements[int(correspondence["plus_node_id"])]
     return float((plus[0] - minus[0]) * normal[0] + (plus[1] - minus[1]) * normal[1])
+
+
+def _scalar(domain, expression) -> float:
+    """Assemble a real scalar consistently for this single-rank adapter."""
+    return float(domain.comm.allreduce(fem.assemble_scalar(fem.form(expression)), op=MPI.SUM))
 
 
 def main() -> None:
@@ -181,6 +186,19 @@ def main() -> None:
     final_displacements = declared_displacements(displacement.x.petsc_vec)
     final = assembler.assemble(pair_map, final_displacements)
     relative_residual = 0.0 if not residual_history or residual_history[0] == 0.0 else residual_history[-1] / residual_history[0]
+    stress = _stress(domain, displacement, youngs, poisson)
+    strain = ufl.sym(ufl.grad(displacement))
+    normal = ufl.FacetNormal(domain)
+    ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tags)
+    reaction = _scalar(
+        domain,
+        ufl.dot(ufl.dot(stress, normal), ufl.as_vector((0.0, 1.0))) * ds(physical_groups["loaded"].tag),
+    )
+    bulk_strain_energy = _scalar(domain, 0.5 * ufl.inner(stress, strain) * ufl.dx)
+    j_diagnostic = [
+        {"radius_mm": radius, "j_mpa_mm": _domain_integral_j(domain, displacement, radius, youngs, poisson)}
+        for radius in card["fracture_quantity"]["contour_radii_mm"]
+    ]
     args.output.mkdir(parents=True, exist_ok=True)
     if comm.rank == 0:
         (args.output / "reversible-cohesive-step.json").write_text(json.dumps({
@@ -191,10 +209,12 @@ def main() -> None:
             "reversible_interface_potential_mpa_mm2": final.reversible_potential_mpa_mm2,
             "quadrature_subintervals": final.quadrature_subintervals,
             "diagnostics": {
-                "reaction": {"status": "not-implemented", "scope": "later convergence/evidence work"},
-                "external_work": {"status": "not-implemented", "scope": "later convergence/evidence work"},
-                "bulk_strain_energy": {"status": "not-implemented", "scope": "later convergence/evidence work"},
-                "j": {"status": "not-implemented", "scope": "Item 6 diagnostic only"},
+                "reaction": {"status": "computed", "value_mpa_mm": reaction,
+                             "convention": "positive y traction resultant on the loaded exterior"},
+                "bulk_strain_energy": {"status": "computed", "value_mpa_mm2": bulk_strain_energy},
+                "j": {"status": "diagnostic-only", "method": "domain-integral", "direction": "crack-extension-x",
+                      "contours": j_diagnostic,
+                      "claim_boundary": "No toughness or fracture-energy comparison or authority is implied."},
             },
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

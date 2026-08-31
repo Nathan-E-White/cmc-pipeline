@@ -71,9 +71,25 @@ def test_case_card_constructs_the_declared_program() -> None:
     assert program.maximum_displacement_mm == 1.0
 
 
+def test_program_owns_reaction_work_and_final_energy_closure() -> None:
+    def solve(displacement: float) -> SingleDisplacementResult:
+        return SingleDisplacementResult(
+            True, mouth_opening_mm=displacement / 10.0, newton_iterations=2, relative_residual=1e-10,
+            reversible_interface_potential_mpa_mm2=0.25 * displacement,
+            diagnostics={"reaction": {"status": "computed", "value_mpa_mm": displacement},
+                         "bulk_strain_energy": {"status": "computed", "value_mpa_mm2": 0.25 * displacement}},
+        )
+    artifact = _program().run(solve)
+    final = artifact["accepted_increments"][-1]
+    assert final["external_work"]["status"] == "computed"
+    assert final["energy_closure"]["status"] == "computed"
+    assert final["energy_closure"]["mismatch_percent"] == 0.0
+
+
 if __name__ == "__main__":
     test_brackets_and_bisects_the_mouth_event_with_increment_evidence()
     test_failed_steps_are_recorded_then_cut_back_without_mutating_the_solver_contract()
     test_kill_switch_emits_an_explicit_failed_artifact()
     test_rejects_a_step_that_claims_success_without_the_declared_residual_limit()
     test_case_card_constructs_the_declared_program()
+    test_program_owns_reaction_work_and_final_energy_closure()

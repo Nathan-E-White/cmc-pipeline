@@ -2,12 +2,12 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: reference-solver <verify-case|solve-case|converge-case|solve-bridged-case|converge-bridged-case> --output <directory>" >&2
+  echo "usage: reference-solver <verify-case|solve-case|converge-case|solve-bridged-case|converge-bridged-case|converge-reversible-cohesive-case> --output <directory>" >&2
   exit 64
 }
 
 command="${1:-}"
-[[ "${command}" == "verify-case" || "${command}" == "solve-case" || "${command}" == "converge-case" || "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" ]] || usage
+[[ "${command}" == "verify-case" || "${command}" == "solve-case" || "${command}" == "converge-case" || "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" || "${command}" == "converge-reversible-cohesive-case" ]] || usage
 shift
 [[ "${1:-}" == "--output" && -n "${2:-}" ]] || usage
 output_dir="$2"
@@ -18,6 +18,18 @@ case_id="edge-cracked-plate-v1"
 if [[ "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" ]]; then
   case_card="/opt/cmc/cases/edge-cracked-plate-bridged-v2.json"
   case_id="edge-cracked-plate-bridged-v2"
+fi
+if [[ "${command}" == "converge-reversible-cohesive-case" ]]; then
+  python3 /opt/cmc/python/converge_reversible_cohesive_edge_crack.py \
+    --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json \
+    --case /opt/cmc/cases/edge-cracked-plate-v1.geo \
+    --output "${output_dir}" \
+    --generator /opt/cmc/python/generate_edge_crack_mesh.py \
+    --mesh-audit /usr/local/bin/mesh-audit \
+    --artifact-validator /opt/cmc/python/validate_opened_crack_mesh_artifacts.py \
+    --program-runner /opt/cmc/python/run_reversible_cohesive_program.py \
+    --single-step-solver /opt/cmc/python/solve_reversible_cohesive_edge_crack.py
+  exit 0
 fi
 mesh_path="${output_dir}/${case_id}.msh"
 if [[ "${command}" == "converge-case" || "${command}" == "converge-bridged-case" ]]; then
