@@ -11,13 +11,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
-from bilinear_mode_i_opening_law import BilinearModeIOpeningLaw, OpeningLawError
+from bilinear_mode_i_opening_law import OpeningLawError, OpeningLawResponse
 
 
 class PairedLipAssemblyError(ValueError):
     """A declared pair or its displacement field is outside this tracer."""
+
+
+class NormalOpeningLaw(Protocol):
+    """Internal seam for a history-free response to a non-negative opening."""
+
+    peak_opening_mm: float
+    final_opening_mm: float
+
+    def evaluate(self, opening_mm: float) -> OpeningLawResponse: ...
 
 
 @dataclass(frozen=True)
@@ -53,7 +62,7 @@ class PairedLipAssembler:
     _GAUSS_POINTS = (-math.sqrt(3.0 / 5.0), 0.0, math.sqrt(3.0 / 5.0))
     _GAUSS_WEIGHTS = (5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0)
 
-    def __init__(self, law: BilinearModeIOpeningLaw, normal_minus_to_plus: Sequence[float]) -> None:
+    def __init__(self, law: NormalOpeningLaw, normal_minus_to_plus: Sequence[float]) -> None:
         if len(normal_minus_to_plus) != 2:
             raise PairedLipAssemblyError("normal_minus_to_plus must have two entries")
         normal = tuple(float(value) for value in normal_minus_to_plus)
@@ -64,7 +73,7 @@ class PairedLipAssembler:
         self._normal = normal
 
     @classmethod
-    def from_pair_map(cls, law: BilinearModeIOpeningLaw, pair_map: Mapping[str, Any]) -> "PairedLipAssembler":
+    def from_pair_map(cls, law: NormalOpeningLaw, pair_map: Mapping[str, Any]) -> "PairedLipAssembler":
         """Construct from the map's declared normal, without inferring one."""
         try:
             normal = pair_map["reference_trace"]["normal_minus_to_plus"]
@@ -149,6 +158,111 @@ class PairedLipAssembler:
                     candidates = [(-b - root) / (2.0 * a), (-b + root) / (2.0 * a)]
             roots.extend(candidate for candidate in candidates if -1.0 + 1e-12 < candidate < 1.0 - 1e-12)
         return [-1.0, *sorted({round(root, 14) for root in roots}), 1.0]
+
+    @staticmethod
+    def _quadratic_coefficients(
+        pair: Mapping[str, Any], nodal_values: Sequence[float], coordinates: Sequence[float]
+    ) -> tuple[float, float, float]:
+        """Return q(xi)=a xi^2+b xi+c for declared quadratic values."""
+        start, end = PairedLipAssembler._reference_interval(pair)
+        at_minus = sum(weight * value for weight, value in zip(
+            PairedLipAssembler._shape_values(start, coordinates, start, end), nodal_values, strict=True
+        ))
+        at_zero = sum(weight * value for weight, value in zip(
+            PairedLipAssembler._shape_values((start + end) / 2.0, coordinates, start, end), nodal_values, strict=True
+        ))
+        at_plus = sum(weight * value for weight, value in zip(
+            PairedLipAssembler._shape_values(end, coordinates, start, end), nodal_values, strict=True
+        ))
+        return (
+            (at_plus + at_minus - 2.0 * at_zero) / 2.0,
+            (at_plus - at_minus) / 2.0,
+            at_zero,
+        )
+
+    @staticmethod
+    def _minimum_quadratic(a: float, b: float, c: float) -> float:
+        """Minimize a quadratic on the closed reference interval [-1, 1]."""
+        candidates = [-1.0, 1.0]
+        if a > 0.0:
+            stationary = -b / (2.0 * a)
+            if -1.0 < stationary < 1.0:
+                candidates.append(stationary)
+        return min(a * xi * xi + b * xi + c for xi in candidates)
+
+    def _pair_nodal_opening(
+        self, pair: Mapping[str, Any], displacements_by_node: Mapping[int, Sequence[float]]
+    ) -> tuple[list[float], list[float]]:
+        """Evaluate the declared plus-minus opening at the P2 nodal coordinates."""
+        start, end = self._reference_interval(pair)
+        minus_nodes, minus_coordinates = self._lip_nodes(pair, "minus")
+        plus_nodes, plus_coordinates = self._lip_nodes(pair, "plus")
+        if sorted(minus_coordinates) != sorted(plus_coordinates):
+            raise PairedLipAssemblyError("paired lips must share their declared reference coordinates")
+        minus_normal = self._normal_displacements(minus_nodes, displacements_by_node, self._normal)
+        plus_normal = self._normal_displacements(plus_nodes, displacements_by_node, self._normal)
+        return [
+            sum(self._shape_values(s, plus_coordinates, start, end)[index] * plus_normal[index] for index in range(3)) -
+            sum(self._shape_values(s, minus_coordinates, start, end)[index] * minus_normal[index] for index in range(3))
+            for s in plus_coordinates
+        ], plus_coordinates
+
+    def maximum_feasible_step(
+        self,
+        pair_map: Mapping[str, Any],
+        displacements_by_node: Mapping[int, Sequence[float]],
+        increment_by_node: Mapping[int, Sequence[float]],
+    ) -> float:
+        """Return the largest safe scale in [0, 1] for a proposed displacement increment.
+
+        The minimum is evaluated analytically for every declared quadratic lip,
+        so a line-search trial cannot hide compression between quadrature points.
+        A bisection supplies a strict interior scale when the full update is not
+        feasible.  It is solver policy to decide what a zero scale means.
+        """
+        try:
+            pairs = pair_map["ordered_element_pairs"]
+        except (KeyError, TypeError) as error:
+            raise PairedLipAssemblyError("pair map has no ordered element pairs") from error
+        if not isinstance(pairs, list) or not pairs:
+            raise PairedLipAssemblyError("pair map must declare at least one element pair")
+
+        def feasible(scale: float) -> bool:
+            candidate = {
+                node: (
+                    float(displacements_by_node[node][0]) + scale * float(increment_by_node[node][0]),
+                    float(displacements_by_node[node][1]) + scale * float(increment_by_node[node][1]),
+                )
+                for node in displacements_by_node
+            }
+            return self.minimum_opening(pair_map, candidate) >= 0.0
+
+        if not feasible(0.0):
+            raise PairedLipAssemblyError("current declared paired-lip state is in compression")
+        if feasible(1.0):
+            return 1.0
+        lower, upper = 0.0, 1.0
+        for _ in range(80):
+            middle = (lower + upper) / 2.0
+            if feasible(middle):
+                lower = middle
+            else:
+                upper = middle
+        return math.nextafter(lower, 0.0)
+
+    def minimum_opening(self, pair_map: Mapping[str, Any], displacements_by_node: Mapping[int, Sequence[float]]) -> float:
+        """Return the exact minimum normal opening across all declared P2 lips."""
+        try:
+            pairs = pair_map["ordered_element_pairs"]
+        except (KeyError, TypeError) as error:
+            raise PairedLipAssemblyError("pair map has no ordered element pairs") from error
+        if not isinstance(pairs, list) or not pairs:
+            raise PairedLipAssemblyError("pair map must declare at least one element pair")
+        minimum = math.inf
+        for pair in pairs:
+            values, coordinates = self._pair_nodal_opening(pair, displacements_by_node)
+            minimum = min(minimum, self._minimum_quadratic(*self._quadratic_coefficients(pair, values, coordinates)))
+        return minimum
 
     def assemble(self, pair_map: Mapping[str, Any], displacements_by_node: Mapping[int, Sequence[float]]) -> PairedLipContribution:
         """Integrate every declared pair with kink-aligned three-point Gauss rules."""

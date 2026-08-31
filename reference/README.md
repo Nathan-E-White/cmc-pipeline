@@ -59,6 +59,13 @@ model—not fracture energy, toughness, calibration, physical validation,
 qualification, or design authority. Compression is rejected rather than
 treated as contact or silently repaired.
 
+`acceptance` is separate from the per-level solve statuses. It is available
+only when all three levels solve, and then applies the declared 2.5% fine/
+medium checks to reaction, interface potential, mouth opening, and both J
+diagnostics, plus the fine energy-closure requirement below 1%. A rejected or
+unavailable acceptance record is evidence of an incomplete tracer, not a
+numerical qualification.
+
 The command writes:
 
 - `levels/{coarse,medium,fine}/`: the declared mesh sizes, audits, solved fields,

@@ -13,6 +13,13 @@ model. A successful coarse run and an explicit medium-level compression stop
 demonstrate why public output must preserve individual mesh-level outcomes,
 rather than reduce them to one convergence number.
 
+The pinned PETSc binding has no line-search precheck callback. The solver
+therefore owns a compact feasibility-limited Newton/backtracking adapter around
+PETSc's linear solve. It analytically limits a trial increment against the
+minimum of every declared quadratic opening before residual assembly. This is
+not a contact formulation: when the no-compression domain cannot produce an
+equilibrium, the program remains failed rather than substituting contact.
+
 ## Decision
 
 `reference-solver converge-reversible-cohesive-case --output <directory>` is
@@ -28,6 +35,11 @@ model. Energy closure is reported, not assumed. The domain-integral J values
 are diagnostic-only. Neither J nor the reversible interface potential is
 fracture energy, toughness, calibration, experimental validation,
 qualification, or design authority.
+
+An artifact also carries a separate acceptance adjudication. It is `accepted`
+only if all levels solve, every declared fine/medium quantity is within 2.5%,
+and the fine energy-closure mismatch is below 1%; otherwise it is `rejected`
+or `unavailable`. This status never rewrites a level result.
 
 ## Consequences
 

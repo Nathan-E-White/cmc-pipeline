@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "reference/python"))
 
-from bilinear_mode_i_opening_law import BilinearModeIOpeningLaw  # noqa: E402
+from bilinear_mode_i_opening_law import BilinearModeIOpeningLaw, OpeningLawResponse  # noqa: E402
 from paired_lip_assembler import PairedLipAssembler, PairedLipAssemblyError  # noqa: E402
 
 
@@ -98,9 +98,51 @@ def test_negative_opening_at_quadrature_is_rejected() -> None:
         raise AssertionError("negative opening must fail this no-contact tracer")
 
 
+def test_feasible_step_limits_a_uniform_closing_direction_before_compression() -> None:
+    pair = _pair()
+    assembler = PairedLipAssembler.from_pair_map(_law(), _map(pair))
+    state = _uniform(0.01, pair)
+    increment = _uniform(-0.02, pair)
+    scale = assembler.maximum_feasible_step(_map(pair), state, increment)
+    assert 0.499999999 < scale <= 0.5
+    limited = {node: (state[node][0] + scale * increment[node][0], state[node][1] + scale * increment[node][1]) for node in state}
+    assembler.assemble(_map(pair), limited)
+
+
+def test_feasible_step_checks_a_quadratic_interior_minimum_not_just_nodes() -> None:
+    pair = _pair()
+    assembler = PairedLipAssembler.from_pair_map(_law(), _map(pair))
+    state = _uniform(0.0, pair)
+    state[11], state[12], state[13] = (0.0, 0.2), (0.0, 0.2), (0.0, 0.1)
+    increment = _uniform(0.0, pair)
+    increment[11], increment[12], increment[13] = (0.0, 0.0), (0.0, 0.0), (0.0, -0.2)
+    scale = assembler.maximum_feasible_step(_map(pair), state, increment)
+    assert 0.499999999 < scale <= 0.5
+    limited = {node: (state[node][0] + scale * increment[node][0], state[node][1] + scale * increment[node][1]) for node in state}
+    assembler.assemble(_map(pair), limited)
+
+
+def test_internal_opening_law_seam_admits_a_test_only_zero_traction_adapter() -> None:
+    class ZeroTractionLaw:
+        peak_opening_mm = 0.01
+        final_opening_mm = 0.1
+
+        @staticmethod
+        def evaluate(_opening_mm: float) -> OpeningLawResponse:
+            return OpeningLawResponse(traction_mpa=0.0, tangent_mpa_per_mm=0.0, reversible_potential_mpa_mm=0.0)
+
+    pair = _pair()
+    contribution = PairedLipAssembler.from_pair_map(ZeroTractionLaw(), _map(pair)).assemble(_map(pair), _uniform(0.02, pair))
+    assert contribution.reversible_potential_mpa_mm2 == 0.0
+    assert all(component == 0.0 for value in contribution.residual_by_node.values() for component in value)
+
+
 if __name__ == "__main__":
     test_uniform_opening_has_equal_and_opposite_resultants_and_consistent_tangent()
     test_rigid_translation_and_rotation_have_zero_opening()
     test_pair_enumeration_is_invariant()
     test_breakpoint_subdivision_finds_one_and_both_law_kinks()
     test_negative_opening_at_quadrature_is_rejected()
+    test_feasible_step_limits_a_uniform_closing_direction_before_compression()
+    test_feasible_step_checks_a_quadratic_interior_minimum_not_just_nodes()
+    test_internal_opening_law_seam_admits_a_test_only_zero_traction_adapter()

@@ -135,7 +135,6 @@ def main() -> None:
     }
     node_dofs = _node_dofs(V, domain, declared_nodes)
     displacement = fem.Function(V)
-    snes = PETSc.SNES().create(comm)
     # The bulk form cannot preallocate couplings between opposite exterior lips.
     # Reserve enough row entries for both the P2 bulk stencil and all six lip
     # nodes in a declared pair.
@@ -157,6 +156,38 @@ def main() -> None:
         values = x.getArray(readonly=True)
         return {node: (float(values[dofs[0]]), float(values[dofs[1]])) for node, dofs in node_dofs.items()}
 
+    def seed_admissible_opening(x) -> float:
+        """Give the no-compression Newton iteration a non-physical feasible seed.
+
+        A zero field lies on the opening constraint.  The prescribed top
+        displacement can therefore have a locally closing first Newton
+        direction even when an opening solution exists.  This strictly
+        positive initial guess changes neither the case card nor the solved
+        equilibrium; it only lets the feasibility-limited iteration begin in
+        its declared domain.
+        """
+        seed_mm = max(1e-6, args.top_displacement_mm * 0.1)
+        plus_nodes = {
+            node for pair in pair_map["ordered_element_pairs"] for node in pair["plus"]["node_ids"]
+        }
+        minus_nodes = {
+            node for pair in pair_map["ordered_element_pairs"] for node in pair["minus"]["node_ids"]
+        }
+        shared_nodes = plus_nodes & minus_nodes
+        plus_nodes -= shared_nodes
+        minus_nodes -= shared_nodes
+        values = x.getArray()
+        for nodes, sign in ((minus_nodes, -1.0), (plus_nodes, 1.0)):
+            for node in nodes:
+                dofs = node_dofs[node]
+                values[dofs[0]] += sign * seed_mm * self_normal[0] / 2.0
+                values[dofs[1]] += sign * seed_mm * self_normal[1] / 2.0
+        x.assemblyBegin(); x.assemblyEnd()
+        x.ghostUpdate(addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
+        if assembler.minimum_opening(pair_map, declared_displacements(x)) < 0.0:
+            raise RuntimeError("admissible opening seed produced compression")
+        return seed_mm
+
     def residual(_snes, x, f) -> None:
         bulk_matrix.mult(x, f)
         f.axpy(-1.0, rhs)
@@ -172,17 +203,75 @@ def main() -> None:
         if P.handle != J.handle:
             P.zeroEntries(); P.axpy(1.0, J); P.assemblyBegin(); P.assemblyEnd()
 
-    snes.setFunction(residual, residual_vector)
-    snes.setJacobian(tangent, jacobian)
-    snes.setTolerances(rtol=1e-8, max_it=25)
+    # petsc4py in the pinned DOLFINx image exposes no SNES line-search
+    # precheck callback.  Keep PETSc for the linearized solve, but own the
+    # compact Newton/backtracking loop here so the paired-lip module can cap a
+    # candidate before *any* residual evaluation.  This is a feasibility
+    # limiter, not a contact or complementarity formulation.
+    ksp = PETSc.KSP().create(comm)
+    ksp.setType("preonly")
+    ksp.getPC().setType("lu")
+    ksp.setOperators(jacobian)
     residual_history: list[float] = []
-    snes.setMonitor(lambda _snes, _iteration, residual_norm: residual_history.append(float(residual_norm)))
-    snes.getKSP().setType("preonly")
-    snes.getKSP().getPC().setType("lu")
-    snes.solve(None, displacement.x.petsc_vec)
-    reason = snes.getConvergedReason()
-    if reason <= 0:
-        raise RuntimeError(f"PETSc nonlinear solve did not converge: reason {reason}")
+    current = displacement.x.petsc_vec
+    self_normal = tuple(float(value) for value in pair_map["reference_trace"]["normal_minus_to_plus"])
+    initial_opening_seed_mm = seed_admissible_opening(current)
+    residual(None, current, residual_vector)
+    initial_norm = residual_vector.norm()
+    residual_history.append(float(initial_norm))
+    newton_iterations = 0
+    converged = initial_norm == 0.0
+    for iteration in range(25):
+        current_norm = residual_vector.norm()
+        if current_norm <= initial_norm * 1e-8:
+            converged = True
+            break
+        tangent(None, current, jacobian, jacobian)
+        rhs_newton = residual_vector.copy()
+        rhs_newton.scale(-1.0)
+        update = current.duplicate()
+        ksp.solve(rhs_newton, update)
+        if ksp.getConvergedReason() <= 0:
+            raise RuntimeError(f"PETSc Newton linear solve did not converge: reason {ksp.getConvergedReason()}")
+        update.ghostUpdate(addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
+        update_values = update.getArray(readonly=True)
+        increment = {
+            node: (float(update_values[dofs[0]]), float(update_values[dofs[1]]))
+            for node, dofs in node_dofs.items()
+        }
+        maximum_step = assembler.maximum_feasible_step(pair_map, declared_displacements(current), increment)
+        if maximum_step <= 0.0:
+            raise RuntimeError(
+                "Newton direction has no positive no-compression step "
+                f"(full-step minimum opening {assembler.minimum_opening(pair_map, {node: (current_value[0] + increment[node][0], current_value[1] + increment[node][1]) for node, current_value in declared_displacements(current).items()}):.12g} mm)"
+            )
+        step = maximum_step
+        accepted = False
+        for _ in range(20):
+            candidate = current.copy()
+            candidate.axpy(step, update)
+            trial_residual = residual_vector.duplicate()
+            # ``step`` is at or below the paired-lip feasibility cap, so this
+            # is the first possible residual evaluation of the trial state.
+            residual(None, candidate, trial_residual)
+            trial_norm = trial_residual.norm()
+            if trial_norm <= (1.0 - 1e-4 * step) * current_norm:
+                candidate.copy(current)
+                trial_residual.copy(residual_vector)
+                residual_history.append(float(trial_norm))
+                newton_iterations = iteration + 1
+                accepted = True
+                break
+            step *= 0.5
+        if not accepted:
+            raise RuntimeError("feasibility-limited Newton backtracking exhausted")
+    if not converged and residual_vector.norm() <= initial_norm * 1e-8:
+        converged = True
+    if not converged:
+        raise RuntimeError(
+            "PETSc feasibility-limited Newton solve did not converge within 25 iterations "
+            f"(residual history tail: {residual_history[-5:]})"
+        )
     final_displacements = declared_displacements(displacement.x.petsc_vec)
     final = assembler.assemble(pair_map, final_displacements)
     relative_residual = 0.0 if not residual_history or residual_history[0] == 0.0 else residual_history[-1] / residual_history[0]
@@ -203,9 +292,11 @@ def main() -> None:
     if comm.rank == 0:
         (args.output / "reversible-cohesive-step.json").write_text(json.dumps({
             "case_id": card["case_id"], "status": "solved-single-displacement-step",
-            "top_displacement_mm": args.top_displacement_mm, "newton_iterations": snes.getIterationNumber(),
+            "top_displacement_mm": args.top_displacement_mm, "newton_iterations": newton_iterations,
+            "initial_opening_seed_mm": initial_opening_seed_mm,
             "relative_residual": relative_residual, "residual_history": residual_history,
             "mouth_opening_mm": _mouth_opening_mm(pair_map, final_displacements),
+            "minimum_normal_opening_mm": assembler.minimum_opening(pair_map, final_displacements),
             "reversible_interface_potential_mpa_mm2": final.reversible_potential_mpa_mm2,
             "quadrature_subintervals": final.quadrature_subintervals,
             "diagnostics": {

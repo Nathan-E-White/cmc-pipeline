@@ -59,6 +59,10 @@
     "method": "domain-integral-diagnostic",
     "contour_radii_mm": [8, 12]
   },
+  "acceptance": {
+    "fine_medium_change_percent_max": 2.5,
+    "fine_energy_closure_percent_max": 1.0
+  },
   "declared_exclusions": [
     "contact",
     "compression",

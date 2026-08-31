@@ -53,6 +53,42 @@ def solved_metrics(program: dict) -> dict | None:
     }
 
 
+def acceptance_summary(card: dict, status: str, comparison: dict) -> dict:
+    """Adjudicate the declared numerical gates without changing level status."""
+    gates = card["acceptance"]
+    summary = {
+        "status": "unavailable",
+        "gates": {
+            "fine_medium_change_percent_max": gates["fine_medium_change_percent_max"],
+            "fine_energy_closure_percent_max": gates["fine_energy_closure_percent_max"],
+        },
+    }
+    if status != "solved" or comparison.get("status") != "computed":
+        return summary
+    changes = comparison["fine_medium_change_percent"]
+    observed = {
+        "reaction": changes["reaction"],
+        "reversible_interface_potential": changes["reversible_interface_potential"],
+        "mouth_opening_event": changes["mouth_opening_event"],
+        **{f"j_diagnostic_radius_{item['radius_mm']}_mm": item["change_percent"] for item in changes["j_diagnostic_by_radius"]},
+    }
+    energy = comparison["energy_closure"]
+    if energy.get("status") != "computed":
+        return summary
+    summary["observed"] = {
+        "fine_medium_change_percent": observed,
+        "fine_energy_closure_percent": energy["mismatch_percent"],
+    }
+    refinement_passed = all(value <= gates["fine_medium_change_percent_max"] for value in observed.values())
+    energy_passed = energy["mismatch_percent"] < gates["fine_energy_closure_percent_max"]
+    summary["status"] = "accepted" if refinement_passed and energy_passed else "rejected"
+    summary["failed_gates"] = [
+        *([] if refinement_passed else ["fine-medium-refinement"]),
+        *([] if energy_passed else ["fine-energy-closure"]),
+    ]
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case-card", type=Path, required=True)
@@ -122,6 +158,7 @@ def main() -> None:
         "case_id": card["case_id"], "status": status,
         "runtime": {"seconds_excluding_image_build": time.monotonic() - started},
         "levels": levels, "comparison": comparison,
+        "acceptance": acceptance_summary(card, status, comparison),
         "adjudication": "synthetic reversible-cohesive numerical tracer; J is diagnostic only and no toughness or fracture-energy authority is asserted.",
         "claim_boundary": card["claim_boundary"],
     }

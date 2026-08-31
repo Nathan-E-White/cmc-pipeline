@@ -32,6 +32,20 @@ def main() -> None:
         comparison = payload.get("comparison", {})
         if comparison.get("status") != "computed": errors.append("missing solved comparison")
         if comparison.get("energy_closure", {}).get("status") != "computed": errors.append("missing energy closure")
+    acceptance = payload.get("acceptance", {})
+    if acceptance.get("status") not in {"accepted", "rejected", "unavailable"}:
+        errors.append("invalid acceptance status")
+    gates = acceptance.get("gates", {})
+    if gates.get("fine_medium_change_percent_max") != 2.5:
+        errors.append("missing refinement acceptance gate")
+    if gates.get("fine_energy_closure_percent_max") != 1.0:
+        errors.append("missing energy acceptance gate")
+    if payload.get("status") == "solved" and acceptance.get("status") == "unavailable":
+        errors.append("solved artifact has no acceptance adjudication")
+    if acceptance.get("status") in {"accepted", "rejected"}:
+        observed = acceptance.get("observed", {})
+        if not isinstance(observed.get("fine_medium_change_percent"), dict): errors.append("missing observed refinement evidence")
+        if not isinstance(observed.get("fine_energy_closure_percent"), (int, float)): errors.append("missing observed energy evidence")
     if errors: raise SystemExit("; ".join(errors))
 
 

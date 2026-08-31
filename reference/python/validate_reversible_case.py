@@ -64,6 +64,7 @@ def validate_case_card(card: Any) -> None:
         "model",
         "loading",
         "fracture_quantity",
+        "acceptance",
         "declared_exclusions",
         "claim_boundary",
     )
@@ -153,6 +154,10 @@ def validate_case_card(card: Any) -> None:
     _required(fracture_quantity, "fracture_quantity", "method", "contour_radii_mm")
     _equal(fracture_quantity["method"], "domain-integral-diagnostic", "fracture_quantity.method")
     _equal(fracture_quantity["contour_radii_mm"], [8, 12], "fracture_quantity.contour_radii_mm")
+    acceptance = _mapping(root["acceptance"], "acceptance")
+    _required(acceptance, "acceptance", "fine_medium_change_percent_max", "fine_energy_closure_percent_max")
+    _number(acceptance["fine_medium_change_percent_max"], 2.5, "acceptance.fine_medium_change_percent_max")
+    _number(acceptance["fine_energy_closure_percent_max"], 1.0, "acceptance.fine_energy_closure_percent_max")
     _equal(root["declared_exclusions"], EXPECTED_EXCLUSIONS, "declared_exclusions")
     if not isinstance(root["claim_boundary"], str) or "not fracture energy or toughness" not in root["claim_boundary"]:
         raise ContractError("claim_boundary must exclude fracture-energy and toughness claims")

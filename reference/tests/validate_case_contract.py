@@ -85,6 +85,7 @@ def test_container_contract_exercises_the_bridged_artifact_validator() -> None:
 def test_solver_image_validates_the_reversible_case_card_before_any_solve() -> None:
     source = DOCKERFILE.read_text(encoding="utf-8")
     assert "validate_reversible_case.py --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json" in source
+    assert "validate_zero_traction_reversible_regression.py" in source
 
 
 def test_solver_image_generates_and_validates_opened_crack_pair_artifacts_at_every_level() -> None:
@@ -145,6 +146,10 @@ def test_reversible_case_card_declares_the_synthetic_reversible_tracer() -> None
         {"near_tip_mm": 1, "far_field_mm": 5},
         {"near_tip_mm": 0.5, "far_field_mm": 2.5},
     ]
+    assert case_card["acceptance"] == {
+        "fine_medium_change_percent_max": 2.5,
+        "fine_energy_closure_percent_max": 1.0,
+    }
 
 
 def test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope() -> None:
@@ -176,6 +181,7 @@ def test_reversible_convergence_claim_boundary_rejects_missing_j_limit_or_progra
     payload = {
         "case_id": "edge-cracked-plate-reversible-v2", "status": "failed", "claim_boundary": boundary,
         "adjudication": "synthetic reversible-cohesive numerical tracer; J is diagnostic only and no toughness or fracture-energy authority is asserted.",
+        "acceptance": {"status": "unavailable", "gates": {"fine_medium_change_percent_max": 2.5, "fine_energy_closure_percent_max": 1.0}},
         "levels": [
             {"name": name, "status": "failed", "program": {"attempts": [], "claim_boundary": boundary}, "metrics": None}
             for name in ("coarse", "medium", "fine")
@@ -189,6 +195,22 @@ def test_reversible_convergence_claim_boundary_rejects_missing_j_limit_or_progra
     candidate = json.loads(json.dumps(payload))
     candidate["levels"][1]["program"]["claim_boundary"] = "wrong boundary"
     assert _validate_reversible_convergence(candidate).returncode != 0
+
+
+def test_reversible_convergence_rejects_missing_acceptance_adjudication() -> None:
+    boundary = json.loads((ROOT / "reference/cases/edge-cracked-plate-reversible-v2.json").read_text(encoding="utf-8"))["claim_boundary"]
+    payload = {
+        "case_id": "edge-cracked-plate-reversible-v2", "status": "solved", "claim_boundary": boundary,
+        "adjudication": "synthetic reversible-cohesive numerical tracer; J is diagnostic only and no toughness or fracture-energy authority is asserted.",
+        "comparison": {"status": "computed", "energy_closure": {"status": "computed"}},
+        "acceptance": {"status": "unavailable", "gates": {"fine_medium_change_percent_max": 2.5, "fine_energy_closure_percent_max": 1.0}},
+        "levels": [
+            {"name": name, "status": "solved", "program": {"attempts": [], "claim_boundary": boundary},
+             "metrics": {"j_diagnostic": {"status": "diagnostic-only"}, "energy_closure": {"status": "computed"}}}
+            for name in ("coarse", "medium", "fine")
+        ],
+    }
+    assert _validate_reversible_convergence(payload).returncode != 0
 
 
 if __name__ == "__main__":
@@ -205,3 +227,4 @@ if __name__ == "__main__":
     test_reversible_case_card_declares_the_synthetic_reversible_tracer()
     test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope()
     test_reversible_convergence_claim_boundary_rejects_missing_j_limit_or_program_propagation()
+    test_reversible_convergence_rejects_missing_acceptance_adjudication()
