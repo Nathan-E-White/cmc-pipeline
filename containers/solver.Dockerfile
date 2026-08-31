@@ -24,6 +24,17 @@ COPY reference/python /opt/cmc/python
 COPY reference/scripts/reference-solver /opt/cmc/bin/reference-solver
 RUN chmod 0755 /opt/cmc/bin/reference-solver
 RUN python3 /opt/cmc/python/validate_reversible_case.py --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json
+RUN for level in 'coarse 2 10' 'medium 1 5' 'fine 0.5 2.5'; do \
+      set -- $level; \
+      python3 /opt/cmc/python/generate_edge_crack_mesh.py \
+        --case /opt/cmc/cases/edge-cracked-plate-v1.geo \
+        --output "/tmp/opened-crack-$1.msh" \
+        --near-size "$2" --far-size "$3" \
+        --crack-face-pairs-output "/tmp/opened-crack-$1-pairs.json"; \
+      /usr/local/bin/mesh-audit "/tmp/opened-crack-$1.msh" "/tmp/opened-crack-$1-audit.json"; \
+      python3 /opt/cmc/python/validate_opened_crack_mesh_artifacts.py \
+        --mesh "/tmp/opened-crack-$1.msh" --pairs "/tmp/opened-crack-$1-pairs.json"; \
+    done
 RUN /opt/cmc/bin/reference-solver verify-case --output /tmp/reference-smoke
 RUN test -s /tmp/reference-smoke/mesh-audit.json \
     && test -s /tmp/reference-smoke/environment.json

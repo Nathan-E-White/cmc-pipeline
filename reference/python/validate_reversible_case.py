@@ -60,6 +60,7 @@ def validate_case_card(card: Any) -> None:
         "case_id",
         "status",
         "geometry",
+        "mesh_levels",
         "model",
         "loading",
         "fracture_quantity",
@@ -77,6 +78,20 @@ def validate_case_card(card: Any) -> None:
     _required(geometry, "geometry", "width_mm", "height_mm", "crack_length_mm", "crack_y_mm")
     for key, expected in (("width_mm", 100.0), ("height_mm", 200.0), ("crack_length_mm", 30.0), ("crack_y_mm", 100.0)):
         _number(geometry[key], expected, f"geometry.{key}")
+
+    mesh_levels = root["mesh_levels"]
+    expected_mesh_levels = [
+        {"near_tip_mm": 2.0, "far_field_mm": 10.0},
+        {"near_tip_mm": 1.0, "far_field_mm": 5.0},
+        {"near_tip_mm": 0.5, "far_field_mm": 2.5},
+    ]
+    if not isinstance(mesh_levels, list) or len(mesh_levels) != len(expected_mesh_levels):
+        raise ContractError("mesh_levels must declare coarse, medium, and fine levels")
+    for index, (level, expected) in enumerate(zip(mesh_levels, expected_mesh_levels, strict=True)):
+        level_mapping = _mapping(level, f"mesh_levels[{index}]")
+        _required(level_mapping, f"mesh_levels[{index}]", "near_tip_mm", "far_field_mm")
+        for key, value in expected.items():
+            _number(level_mapping[key], value, f"mesh_levels[{index}].{key}")
 
     model = _mapping(root["model"], "model")
     _required(

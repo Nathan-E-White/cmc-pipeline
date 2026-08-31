@@ -87,6 +87,14 @@ def test_solver_image_validates_the_reversible_case_card_before_any_solve() -> N
     assert "validate_reversible_case.py --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json" in source
 
 
+def test_solver_image_generates_and_validates_opened_crack_pair_artifacts_at_every_level() -> None:
+    source = DOCKERFILE.read_text(encoding="utf-8")
+    assert "--crack-face-pairs-output" in source
+    assert "validate_opened_crack_mesh_artifacts.py" in source
+    for level in ("coarse 2 10", "medium 1 5", "fine 0.5 2.5"):
+        assert level in source
+
+
 def _validate_reversible_case(card: dict) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as directory:
         case_card = Path(directory) / "case.json"
@@ -112,6 +120,11 @@ def test_reversible_case_card_declares_the_synthetic_reversible_tracer() -> None
     )
     result = _validate_reversible_case(case_card)
     assert result.returncode == 0, result.stderr
+    assert case_card["mesh_levels"] == [
+        {"near_tip_mm": 2, "far_field_mm": 10},
+        {"near_tip_mm": 1, "far_field_mm": 5},
+        {"near_tip_mm": 0.5, "far_field_mm": 2.5},
+    ]
 
 
 def test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope() -> None:
@@ -147,5 +160,6 @@ if __name__ == "__main__":
     test_public_runner_declares_the_bridged_tracer_command()
     test_container_contract_exercises_the_bridged_artifact_validator()
     test_solver_image_validates_the_reversible_case_card_before_any_solve()
+    test_solver_image_generates_and_validates_opened_crack_pair_artifacts_at_every_level()
     test_reversible_case_card_declares_the_synthetic_reversible_tracer()
     test_reversible_case_card_rejects_invalid_law_provenance_loading_and_scope()
