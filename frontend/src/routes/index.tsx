@@ -1,80 +1,20 @@
 import { createFileRoute } from "@tanstack/solid-router";
-import { createSignal, Show } from "solid-js";
+import { RunRegisterPrototype } from "../components/RunRegisterPrototype";
+import type { RegisterVariant } from "../prototypes/run-register";
 
-import { ControlPanel } from "../components/ControlPanel";
-import { ReferenceRunControls } from "../components/ReferenceRunControls";
-import { ThreeViewport } from "../components/ThreeViewport";
-import {
-	defaultInputs,
-	nodeCountFor,
-	type SimulationInput,
-	type SimulationSnapshot,
-} from "../simulation";
-import { simulationClient } from "../simulation-client";
-
-export const Route = createFileRoute("/")({ component: Home });
+// PROTOTYPE: three run-register layouts, switchable by ?variant=.
+export const Route = createFileRoute("/")({
+	component: Home,
+	validateSearch: (search: Record<string, unknown>) => ({
+		variant: isVariant(search.variant) ? search.variant : "paintbox",
+	}),
+});
 
 function Home() {
-	const [inputs, setInputs] = createSignal(defaultInputs);
-	const [snapshot, setSnapshot] = createSignal<SimulationSnapshot>(
-		idle(inputs()),
-	);
-	const update = (value: Partial<SimulationInput>) => {
-		const next = { ...inputs(), ...value };
-		setInputs(next);
-		setSnapshot(idle(next));
-	};
-	return (
-		<main class="app-shell">
-			<ControlPanel inputs={inputs} onInput={update} snapshot={snapshot} />
-			<Show
-				fallback={
-					<p>Reference-run fixture unavailable for this architecture.</p>
-				}
-				when={referenceRunSubmission(inputs())}
-			>
-				{(submission) => (
-					<ReferenceRunControls
-						client={simulationClient}
-						submission={submission()}
-					/>
-				)}
-			</Show>
-			<ThreeViewport snapshot={snapshot} />
-		</main>
-	);
+	const search = Route.useSearch();
+	return <RunRegisterPrototype variant={search().variant} />;
 }
 
-function idle(inputs: SimulationInput): SimulationSnapshot {
-	return {
-		mode: "Representative material continuum",
-		progress: 0,
-		runs: { FEA: undefined, FNO: undefined },
-		status: "idle",
-		telemetry: {
-			area: 0,
-			energy: 0,
-			margin: 1.5,
-			nodes: nodeCountFor(inputs.architecture),
-		},
-		title: "System ready",
-	};
-}
-
-function referenceRunSubmission(inputs: SimulationInput) {
-	if (
-		inputs.architecture !== "sic_sic" ||
-		inputs.coatingStrength !== 60 ||
-		inputs.mechanicalLoad !== 45 ||
-		inputs.thermalGradient !== 120
-	)
-		return undefined;
-	return {
-		caseId: "sic-sic-panel-042",
-		inputs: {
-			coatingShearLimitMpa: inputs.coatingStrength,
-			mechanicalLoadKn: inputs.mechanicalLoad,
-			thermalGradientCPerMm: inputs.thermalGradient,
-		},
-	};
+function isVariant(value: unknown): value is RegisterVariant {
+	return value === "paintbox" || value === "ledger" || value === "sequence";
 }
