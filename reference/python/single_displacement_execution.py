@@ -49,9 +49,13 @@ class SingleDisplacementExecution:
             str(directory),
         ]
         try:
-            completed = subprocess.run(command, text=True, capture_output=True, check=False)
+            completed = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
         except OSError as error:
-            return SingleDisplacementResult(False, failure=f"single-step solver could not start: {error}")
+            return SingleDisplacementResult(
+                False, failure=f"single-step solver could not start: {error}"
+            )
         result_path = directory / "reversible-cohesive-step.json"
         if completed.returncode != 0 or not result_path.is_file():
             detail = completed.stderr.strip() or completed.stdout.strip()

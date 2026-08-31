@@ -150,30 +150,53 @@ class ReversibleCohesiveConvergence:
     def __init__(self, toolchain: ReversibleCohesiveToolchain) -> None:
         self._tools = toolchain
 
-    def _program(self, directory: Path, mesh: Path, pairs: Path) -> dict:
-        completed = subprocess.run(
-            [
-                "python3",
-                str(self._tools.program_runner),
-                "--mesh",
-                str(mesh),
-                "--crack-face-pairs",
-                str(pairs),
-                "--case-card",
-                str(self._tools.case_card),
-                "--solver",
-                str(self._tools.single_step_solver),
-                "--output",
-                str(directory),
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+    def _program(
+        self, directory: Path, mesh: Path, pairs: Path, claim_boundary: str
+    ) -> dict:
+        try:
+            completed = subprocess.run(
+                [
+                    "python3",
+                    str(self._tools.program_runner),
+                    "--mesh",
+                    str(mesh),
+                    "--crack-face-pairs",
+                    str(pairs),
+                    "--case-card",
+                    str(self._tools.case_card),
+                    "--solver",
+                    str(self._tools.single_step_solver),
+                    "--output",
+                    str(directory),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as error:
+            return {
+                "status": "failed",
+                "claim_boundary": claim_boundary,
+                "failure": f"program runner could not start: {error}",
+                "attempts": [],
+                "accepted_increments": [],
+            }
         program_path = directory / "reversible-cohesive-program.json"
+        if program_path.is_file():
+            try:
+                return json.loads(program_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                return {
+                    "status": "indeterminate",
+                    "claim_boundary": claim_boundary,
+                    "failure": "program runner wrote malformed JSON evidence",
+                    "attempts": [],
+                    "accepted_increments": [],
+                }
         if completed.returncode != 0 or not program_path.is_file():
             return {
                 "status": "failed",
+                "claim_boundary": claim_boundary,
                 "failure": "program runner did not write an artifact"
                 + (
                     f": {detail}"
@@ -183,26 +206,24 @@ class ReversibleCohesiveConvergence:
                 "attempts": [],
                 "accepted_increments": [],
             }
-        try:
-            return json.loads(program_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {
-                "status": "indeterminate",
-                "failure": "program runner wrote malformed JSON evidence",
-                "attempts": [],
-                "accepted_increments": [],
-            }
 
     def _run_tool(self, command: list[str], tool: str) -> str | None:
         try:
-            completed = subprocess.run(command, text=True, capture_output=True, check=False)
+            completed = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
         except OSError as error:
             return f"{tool} could not start: {error}"
         return tool_failure(completed, tool)
 
     @staticmethod
     def _failed_level(
-        name: str, level: dict, failure: str, *, mesh: dict | None = None
+        name: str,
+        level: dict,
+        failure: str,
+        claim_boundary: str,
+        *,
+        mesh: dict | None = None,
     ) -> dict:
         return {
             "name": name,
@@ -213,6 +234,7 @@ class ReversibleCohesiveConvergence:
             "mesh": mesh,
             "program": {
                 "status": "unavailable",
+                "claim_boundary": claim_boundary,
                 "failure": failure,
                 "attempts": [],
                 "accepted_increments": [],
@@ -243,17 +265,20 @@ class ReversibleCohesiveConvergence:
             "mesh generator",
         )
         if failure is not None:
-            return self._failed_level(name, level, failure)
+            return self._failed_level(name, level, failure, card["claim_boundary"])
         failure = self._run_tool(
             [str(self._tools.mesh_audit), str(mesh), str(audit)], "mesh audit"
         )
         if failure is not None:
-            return self._failed_level(name, level, failure)
+            return self._failed_level(name, level, failure, card["claim_boundary"])
         try:
             mesh_record = json.loads(audit.read_text(encoding="utf-8"))["mesh"]
         except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
             return self._failed_level(
-                name, level, "mesh audit did not write a usable mesh record"
+                name,
+                level,
+                "mesh audit did not write a usable mesh record",
+                card["claim_boundary"],
             )
         failure = self._run_tool(
             [
@@ -267,8 +292,10 @@ class ReversibleCohesiveConvergence:
             "opened-crack artifact validator",
         )
         if failure is not None:
-            return self._failed_level(name, level, failure, mesh=mesh_record)
-        program = self._program(directory, mesh, pairs)
+            return self._failed_level(
+                name, level, failure, card["claim_boundary"], mesh=mesh_record
+            )
+        program = self._program(directory, mesh, pairs, card["claim_boundary"])
         metrics = solved_metrics(program)
         level_status = (
             program["status"]

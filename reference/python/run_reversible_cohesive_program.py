@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 """Run Item 5's monotonic program through the one-step PETSc adapter."""
+
 from __future__ import annotations
 
 import argparse
@@ -29,8 +29,12 @@ def main() -> None:
     )
     artifact = program.run(execution.solve)
     args.output.mkdir(parents=True, exist_ok=True)
-    artifact.update({"case_id": card["case_id"], "claim_boundary": card["claim_boundary"]})
-    (args.output / "reversible-cohesive-program.json").write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    artifact.update(
+        {"case_id": card["case_id"], "claim_boundary": card["claim_boundary"]}
+    )
+    (args.output / "reversible-cohesive-program.json").write_text(
+        json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     if artifact["status"] != "solved":
         raise SystemExit(2)
 
