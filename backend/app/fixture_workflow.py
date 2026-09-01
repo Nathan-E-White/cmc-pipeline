@@ -42,7 +42,9 @@ class ReferenceRunService:
         run = self._runs.get(run_id)
         if run is None:
             raise FixtureWorkflowError(
-                404, "reference_run_not_found", "No reference run exists for the supplied identifier."
+                404,
+                "reference_run_not_found",
+                "No reference run exists for the supplied identifier.",
             )
         if run["status"] == "queued":
             run["status"] = "complete"
@@ -52,28 +54,38 @@ class ReferenceRunService:
         run = self._runs.get(run_id)
         if run is None:
             raise FixtureWorkflowError(
-                404, "reference_run_not_found", "No reference run exists for the supplied identifier."
+                404,
+                "reference_run_not_found",
+                "No reference run exists for the supplied identifier.",
             )
         if run["status"] != "complete":
             raise FixtureWorkflowError(
-                409, "reference_run_not_complete", "The reference run has not reached a terminal state."
+                409,
+                "reference_run_not_complete",
+                "The reference run has not reached a terminal state.",
             )
         result = self._corpus.result(run["case_id"])
         if result is None:
             raise FixtureWorkflowError(
-                404, "artifact_not_available", "No result fixture is available for this reference run."
+                404,
+                "artifact_not_available",
+                "No result fixture is available for this reference run.",
             )
         return run, result
 
 
 class VerificationService:
-    def __init__(self, reference_runs: ReferenceRunService, corpus: FixtureCorpus = fixture_corpus) -> None:
+    def __init__(
+        self, reference_runs: ReferenceRunService, corpus: FixtureCorpus = fixture_corpus
+    ) -> None:
         self._reference_runs = reference_runs
         self._corpus = corpus
         self._verification_ids = count(1)
         self._verifications: dict[str, dict] = {}
 
-    def verify(self, reference_run_id: object, inputs: object, observation: object) -> tuple[dict, dict]:
+    def verify(
+        self, reference_run_id: object, inputs: object, observation: object
+    ) -> tuple[dict, dict]:
         if not isinstance(reference_run_id, str):
             raise FixtureWorkflowError(
                 422, "invalid_verification", "A reference_run_id is required."
@@ -86,7 +98,9 @@ class VerificationService:
                 "Verification inputs must match the declared reference-run inputs.",
             )
         if not isinstance(observation, dict):
-            raise FixtureWorkflowError(422, "invalid_observation", "An observation object is required.")
+            raise FixtureWorkflowError(
+                422, "invalid_observation", "An observation object is required."
+            )
         if (
             observation.get("quantity") != result["quantity"]
             or observation.get("units") != result["units"]
@@ -107,8 +121,12 @@ class VerificationService:
             relative_error = None
             comparison_note = "Observation is outside the declared fixture surrogate domain."
         else:
-            relative_error = round(abs(observation["value"] - result["value"]) / abs(result["value"]), 4)
-            status = "accepted" if relative_error <= criterion["maximum_relative_error"] else "rejected"
+            relative_error = round(
+                abs(observation["value"] - result["value"]) / abs(result["value"]), 4
+            )
+            status = (
+                "accepted" if relative_error <= criterion["maximum_relative_error"] else "rejected"
+            )
             comparison_note = None
         verification_id = f"verification-{next(self._verification_ids):04d}"
         verification = {

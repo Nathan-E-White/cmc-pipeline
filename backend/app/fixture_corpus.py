@@ -95,7 +95,10 @@ class FixtureCorpus:
         self, case_id: str | None = None, *, mesh: bool = False, adjudication: bool = False
     ) -> dict:
         if case_id is None:
-            return {"source_kind": "fixture", "claim_boundary": "Representative fixture metadata only."}
+            return {
+                "source_kind": "fixture",
+                "claim_boundary": "Representative fixture metadata only.",
+            }
         value = {
             "source_kind": "fixture",
             "reference_solution": {
@@ -109,7 +112,9 @@ class FixtureCorpus:
             value["claim_boundary"] = "Rendering fixture only; not a solver-grade mesh."
         if adjudication:
             value["surrogate"] = {"model_id": "demo-fno-r1", "domain_id": "demo-domain-r1"}
-            value["claim_boundary"] = "Fixture adjudication only; not independent physical validation or qualification."
+            value["claim_boundary"] = (
+                "Fixture adjudication only; not independent physical validation or qualification."
+            )
         return value
 
     def list_cases(self) -> list[dict]:
