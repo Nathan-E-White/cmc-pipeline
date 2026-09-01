@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CompletedProcess, run
 from typing import Protocol
 
+from app.field_set import FieldSetError
 from app.run_mirror import ArtifactReceipt, PostgresRunMirror, RunAttempt, RunObservation
 from app.runner_registry import RunnerDefinition, runner_definition
 
@@ -130,21 +132,25 @@ class CaseExecutor:
         )
         try:
             result = self.execute(request)
-            artifacts = self._publish_manifest(request.output_directory)
             definition = runner_definition(attempt.runner_key)
+            artifacts = self._publish_manifest(
+                request.output_directory,
+                definition.requires_artifact_manifest,
+                definition.artifact_validator,
+            )
             self._mirror.record(
                 attempt.run_id,
                 attempt.attempt_number,
                 RunObservation(
-                    phase_key="verify",
-                    event_type="verification-observed",
+                    phase_key=definition.phase_key,
+                    event_type=definition.event_type,
                     payload={"exit_code": result.exit_code},
                     phase_state="completed" if result.exit_code == 0 else "failed",
                     headline={"exit_code": result.exit_code},
                     trend={},
-                    warnings=["Verification completed; no numerical solution outcome is asserted."]
+                    warnings=[definition.success_warning]
                     if result.exit_code == 0
-                    else ["Runner exited nonzero; inspect published artifacts."],
+                    else [definition.failure_warning],
                     artifacts=tuple(artifacts),
                 ),
             )
@@ -170,13 +176,27 @@ class CaseExecutor:
             result.exit_code,
             success_outcome=definition.success_outcome,
             evidence_disposition=definition.evidence_disposition,
+            phase_key=definition.terminal_phase_key,
+            success_event_type=definition.terminal_success_event_type,
+            failure_event_type=definition.terminal_failure_event_type,
+            success_warning=definition.terminal_success_warning,
+            failure_warning=definition.terminal_failure_warning,
         )
         return attempt, result
 
-    def _publish_manifest(self, output_directory: Path) -> list[tuple[str, ArtifactReceipt]]:
+    def _publish_manifest(
+        self,
+        output_directory: Path,
+        required: bool,
+        validator: Callable[[dict[str, tuple[str, str]]], None] | None,
+    ) -> list[tuple[str, ArtifactReceipt]]:
         """Validate a manifest and publish only explicitly declared local files."""
         manifest_path = output_directory / "artifact-manifest.json"
-        if self._publisher is None or not manifest_path.is_file():
+        if self._publisher is None:
+            return []
+        if not manifest_path.is_file():
+            if required:
+                raise ValueError("Declared runner did not publish artifact-manifest.json.")
             return []
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         entries = manifest.get("artifacts") if isinstance(manifest, dict) else None
@@ -184,6 +204,7 @@ class CaseExecutor:
             raise TypeError("artifact-manifest.json must contain an artifacts list.")
         published: list[tuple[str, ArtifactReceipt]] = []
         root = output_directory.resolve()
+        declared_files: dict[str, tuple[str, str]] = {}
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("role"), str):
                 raise TypeError("Each manifest artifact requires a string role.")
@@ -198,13 +219,10 @@ class CaseExecutor:
             published.append(
                 (entry["role"], self._publisher.put_bytes(source.read_bytes(), media_type))
             )
-        if any(role == "field-set-manifest" for role, _receipt in published):
-            required = {
-                "field-set-manifest",
-                "field/displacement/xdmf",
-                "field/displacement/hdf5",
-                "field/displacement/acceptance",
-            }
-            if not required.issubset({role for role, _receipt in published}):
-                raise ValueError("Field export manifest omits required declared artifact roles.")
+            declared_files[entry["role"]] = (str(source), media_type)
+        if validator is not None:
+            try:
+                validator(declared_files)
+            except FieldSetError as error:
+                raise ValueError(f"Declared runner evidence is invalid: {error.reason}") from error
         return published

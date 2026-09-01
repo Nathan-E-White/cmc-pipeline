@@ -9,7 +9,8 @@ authority. The browser never reads raw solver files.
 
 ## Field set manifest
 
-The executor publishes `field-set-manifest` with media type
+The executor publishes declared artifact bytes generically. The Field Set module
+interprets `field-set-manifest` with media type
 `application/vnd.cmc.field-set-manifest+json`. Its JSON shape is
 `cmc.field-set-manifest.v1`:
 
@@ -30,7 +31,8 @@ The executor publishes `field-set-manifest` with media type
 }
 ```
 
-The XDMF, HDF5, and acceptance roles are mandatory. The acceptance record is
+The XDMF, HDF5, and acceptance roles are mandatory to the Field Set module; the
+executor does not infer or hard-code their names. The acceptance record is
 `cmc.r0-field-acceptance.v1`, with `accepted` status and the explicit
 `mesh_audit: accepted` and `solution: solved` gates. `field/<id>/mesh` is optional source
 evidence and is never inferred from a path. The Run Mirror's digest-addressed

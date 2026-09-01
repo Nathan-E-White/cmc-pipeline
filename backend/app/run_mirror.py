@@ -249,25 +249,26 @@ class PostgresRunMirror:
         *,
         success_outcome: str = "indeterminate",
         evidence_disposition: str = "indeterminate",
+        phase_key: str = "publish",
+        success_event_type: str = "attempt-finished",
+        failure_event_type: str = "attempt-failed",
+        success_warning: str = "Declared verification completed; it does not establish a solved physical case.",
+        failure_warning: str = "Runner exited nonzero; artifacts remain available for review.",
     ) -> RunSnapshot:
         """Record process completion without turning verification into a solution claim."""
         outcome = success_outcome if exit_code == 0 else "failed"
-        event_type = "attempt-finished" if exit_code == 0 else "attempt-failed"
+        event_type = success_event_type if exit_code == 0 else failure_event_type
         return self.record(
             run_id,
             attempt_number,
             RunObservation(
-                phase_key="publish",
+                phase_key=phase_key,
                 event_type=event_type,
                 payload={"exit_code": exit_code},
                 phase_state="completed" if exit_code == 0 else "failed",
                 headline={"exit_code": exit_code},
                 trend={},
-                warnings=[
-                    "Declared verification completed; it does not establish a solved physical case."
-                ]
-                if exit_code == 0
-                else ["Runner exited nonzero; artifacts remain available for review."],
+                warnings=[success_warning] if exit_code == 0 else [failure_warning],
                 lifecycle="terminal",
                 outcome=outcome,
                 evidence_disposition=evidence_disposition if exit_code == 0 else "unavailable",

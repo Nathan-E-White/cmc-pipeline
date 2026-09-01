@@ -167,6 +167,24 @@ def test_field_artifact_returns_unavailable_when_units_are_undeclared(tmp_path) 
     assert response["reason"] == "invalid_manifest"
 
 
+def test_field_artifact_rejects_a_field_set_with_the_wrong_declared_media_type(tmp_path) -> None:
+    source = records(tmp_path)
+    receipt_value, content = source["field-set-manifest"]
+    source["field-set-manifest"] = (
+        ArtifactReceipt(
+            receipt_value.sha256,
+            receipt_value.byte_length,
+            "text/plain",
+            receipt_value.storage_key,
+        ),
+        content,
+    )
+    response = FieldArtifact(MemoryArtifacts(accepted_snapshot(), source)).field_artifact("run-1")
+
+    assert response["state"] == "unavailable"
+    assert response["reason"] == "invalid_manifest"
+
+
 def test_field_artifact_rejects_digest_mismatch(tmp_path) -> None:
     source = records(tmp_path)
     receipt_value, _content = source["field/displacement/hdf5"]

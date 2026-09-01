@@ -45,7 +45,7 @@ CMC_ARTIFACT_SECRET_KEY=local-development-only \\
 ### V3 serial executor
 
 The `executor` Compose service claims one queued V3 attempt at a time, invokes
-only a declared runner, validates its artifact manifest,
+only a declared runner, validates its generic artifact manifest,
 and publishes declared bytes to MinIO through the Run Mirror. It uses the host
 Docker socket to launch the runner container; enable it only for this trusted
 local-development composition:
