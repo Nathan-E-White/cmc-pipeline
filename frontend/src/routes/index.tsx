@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/solid-router";
 import { ReferenceRunControls } from "../components/ReferenceRunControls";
+import { V3RunRegister } from "../components/V3RunRegister";
 import { simulationClient } from "../simulation-client";
 
 export const Route = createFileRoute("/")({
@@ -7,5 +8,10 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-	return <ReferenceRunControls client={simulationClient} />;
+	return (
+		<>
+			<V3RunRegister />
+			<ReferenceRunControls client={simulationClient} />
+		</>
+	);
 }

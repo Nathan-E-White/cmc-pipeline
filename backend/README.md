@@ -29,6 +29,8 @@ defined in [`../docs/v1-api-contract.md`](../docs/v1-api-contract.md).
 V3's Run Mirror is separate from the V1 fixture routes. Its Postgres schema,
 idempotency, ordered events, and MinIO artifact identity are defined in
 [`../docs/v3-run-mirror-contract.md`](../docs/v3-run-mirror-contract.md).
+Compose applies each numbered migration once through the `migrate` module, so an
+existing local Postgres volume receives later V3 migrations without a reset.
 Run the local Compose contract tests only after `docker --context orbstack
 compose up -d` has made Postgres and MinIO healthy:
 

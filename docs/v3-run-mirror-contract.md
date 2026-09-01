@@ -25,4 +25,4 @@ MinIO is an immutable content-addressed store. An artifact key is `sha256/<hex d
 
 ## Ownership and exclusions
 
-Postgres, not Electric or the browser, authorizes lifecycle decisions and owns the ordered event log. Electric is configured only as a read-projection replicator. The migration in [`../backend/migrations/0001_run_mirror.sql`](../backend/migrations/0001_run_mirror.sql) is the schema authority. HTTP/SSE routes, container event production, workflow compilation, and field conversion belong to later delivery items.
+Postgres, not Electric or the browser, authorizes lifecycle decisions and owns the ordered event log. Electric is configured only as a read-projection replicator. Numbered migrations in [`../backend/migrations`](../backend/migrations) are the schema authority and are applied once by the local Compose `migrate` module. HTTP/SSE routes, container event production, workflow compilation, and field conversion belong to later delivery items.

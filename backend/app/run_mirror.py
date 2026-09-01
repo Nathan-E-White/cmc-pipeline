@@ -29,6 +29,7 @@ class RunSnapshot:
     lifecycle: str
     outcome: str | None
     current_attempt: int
+    evidence_disposition: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,25 @@ class ArtifactReceipt:
     byte_length: int
     media_type: str
     storage_key: str
+
+
+@dataclass(frozen=True)
+class RunObservation:
+    """One validated executor observation; the Run Mirror makes it durable atomically."""
+
+    phase_key: str
+    event_type: str
+    payload: dict[str, Any]
+    phase_state: str
+    headline: dict[str, Any]
+    trend: dict[str, Any]
+    warnings: list[str]
+    container_observed_at: str | None = None
+    solver_evidence_at: str | None = None
+    lifecycle: str | None = None
+    outcome: str | None = None
+    evidence_disposition: str | None = None
+    artifacts: tuple[tuple[str, ArtifactReceipt], ...] = ()
 
 
 def canonical_case_digest(case_card: dict[str, Any]) -> str:
@@ -116,13 +136,13 @@ class PostgresRunMirror:
             cursor.execute(
                 "INSERT INTO runs (run_id, case_digest, idempotency_key, lifecycle) "
                 "VALUES (%s, %s, %s, 'submitted') ON CONFLICT (idempotency_key) "
-                "DO NOTHING RETURNING run_id, case_digest, lifecycle, outcome, current_attempt",
+                "DO NOTHING RETURNING run_id, case_digest, lifecycle, outcome, current_attempt, evidence_disposition",
                 (run_id, digest, idempotency_key),
             )
             created = cursor.fetchone()
             if created is None:
                 cursor.execute(
-                    "SELECT run_id, case_digest, lifecycle, outcome, current_attempt "
+                    "SELECT run_id, case_digest, lifecycle, outcome, current_attempt, evidence_disposition "
                     "FROM runs WHERE idempotency_key = %s",
                     (idempotency_key,),
                 )
@@ -140,12 +160,16 @@ class PostgresRunMirror:
                 "event_type, payload) VALUES (%s, 1, 1, 1, 'run-submitted', %s)",
                 (run_id, json.dumps({"case_digest": digest})),
             )
+            cursor.execute(
+                "INSERT INTO run_summary_projections (run_id, revision, lifecycle) VALUES (%s, 1, 'submitted')",
+                (run_id,),
+            )
             return RunSnapshot(str(run_id), digest, "submitted", None, 1)
 
     def inspect(self, run_id: str) -> RunSnapshot:
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
-                "SELECT run_id, case_digest, lifecycle, outcome, current_attempt "
+                "SELECT run_id, case_digest, lifecycle, outcome, current_attempt, evidence_disposition "
                 "FROM runs WHERE run_id = %s",
                 (UUID(run_id),),
             )
@@ -157,7 +181,7 @@ class PostgresRunMirror:
     def request_cancel(self, run_id: str) -> RunSnapshot:
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
-                "SELECT run_id, case_digest, lifecycle, outcome, current_attempt "
+                "SELECT run_id, case_digest, lifecycle, outcome, current_attempt, evidence_disposition "
                 "FROM runs WHERE run_id = %s FOR UPDATE",
                 (UUID(run_id),),
             )
@@ -221,6 +245,67 @@ class PostgresRunMirror:
                 (UUID(run_id), role, artifact.sha256),
             )
 
+    def record(self, run_id: str, attempt_number: int, observation: RunObservation) -> RunSnapshot:
+        """Append evidence and refresh only its compact projection in one transaction."""
+        with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT run_id, case_digest, lifecycle, outcome, current_attempt, evidence_disposition "
+                "FROM runs WHERE run_id = %s FOR UPDATE",
+                (UUID(run_id),),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise RunMirrorError("Run does not exist.")
+            snapshot = self._snapshot(row)
+            if snapshot.current_attempt != attempt_number:
+                raise RunMirrorError("Observation names a non-current attempt.")
+            cursor.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1, COALESCE(MAX(run_sequence), 0) + 1 "
+                "FROM run_events WHERE run_id = %s",
+                (UUID(run_id),),
+            )
+            sequence, revision = cursor.fetchone()
+            cursor.execute(
+                "INSERT INTO run_events (run_id, attempt_number, run_sequence, sequence, phase_key, event_type, payload) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (UUID(run_id), attempt_number, revision, sequence, observation.phase_key,
+                 observation.event_type, json.dumps(observation.payload, sort_keys=True)),
+            )
+            lifecycle = observation.lifecycle or snapshot.lifecycle
+            outcome = observation.outcome if observation.lifecycle == "terminal" else snapshot.outcome
+            disposition = observation.evidence_disposition or snapshot.evidence_disposition
+            cursor.execute(
+                "UPDATE runs SET lifecycle = %s, outcome = %s, evidence_disposition = %s, updated_at = now() "
+                "WHERE run_id = %s",
+                (lifecycle, outcome, disposition, UUID(run_id)),
+            )
+            cursor.execute(
+                "INSERT INTO run_summary_projections (run_id, revision, lifecycle, outcome, evidence_disposition, current_phase_key) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (run_id) DO UPDATE SET "
+                "revision = EXCLUDED.revision, lifecycle = EXCLUDED.lifecycle, outcome = EXCLUDED.outcome, "
+                "evidence_disposition = EXCLUDED.evidence_disposition, current_phase_key = EXCLUDED.current_phase_key, updated_at = now()",
+                (UUID(run_id), revision, lifecycle, outcome, disposition, observation.phase_key),
+            )
+            cursor.execute(
+                "INSERT INTO run_phase_summary_projections (run_id, phase_key, revision, state, headline, trend, warnings, last_container_observed_at, last_solver_evidence_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (run_id, phase_key) DO UPDATE SET "
+                "revision = EXCLUDED.revision, state = EXCLUDED.state, headline = EXCLUDED.headline, trend = EXCLUDED.trend, warnings = EXCLUDED.warnings, "
+                "last_container_observed_at = EXCLUDED.last_container_observed_at, last_solver_evidence_at = EXCLUDED.last_solver_evidence_at",
+                (UUID(run_id), observation.phase_key, revision, observation.phase_state,
+                 json.dumps(observation.headline), json.dumps(observation.trend), json.dumps(observation.warnings),
+                 observation.container_observed_at, observation.solver_evidence_at),
+            )
+            for role, artifact in observation.artifacts:
+                cursor.execute(
+                    "INSERT INTO artifacts (sha256, byte_length, media_type, storage_key) VALUES (%s, %s, %s, %s) ON CONFLICT (sha256) DO NOTHING",
+                    (artifact.sha256, artifact.byte_length, artifact.media_type, artifact.storage_key),
+                )
+                cursor.execute(
+                    "INSERT INTO run_artifacts (run_id, role, sha256) VALUES (%s, %s, %s) ON CONFLICT (run_id, role) DO UPDATE SET sha256 = EXCLUDED.sha256",
+                    (UUID(run_id), role, artifact.sha256),
+                )
+        return RunSnapshot(snapshot.run_id, snapshot.case_digest, lifecycle, outcome, attempt_number, disposition)
+
     @staticmethod
     def _snapshot(row: tuple[Any, ...]) -> RunSnapshot:
-        return RunSnapshot(str(row[0]), row[1], row[2], row[3], row[4])
+        return RunSnapshot(str(row[0]), row[1], row[2], row[3], row[4], row[5] if len(row) > 5 else None)
