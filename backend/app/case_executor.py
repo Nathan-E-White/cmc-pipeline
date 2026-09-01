@@ -10,6 +10,7 @@ from subprocess import CompletedProcess, run
 from typing import Protocol
 
 from app.run_mirror import ArtifactReceipt, PostgresRunMirror, RunAttempt, RunObservation
+from app.runner_registry import RunnerDefinition, runner_definition
 
 
 @dataclass(frozen=True)
@@ -28,19 +29,6 @@ class ExecutionResult:
     stderr: str
 
 
-@dataclass(frozen=True)
-class RunnerDefinition:
-    service: str
-    command: tuple[str, ...]
-
-
-RUNNERS = {
-    "reference-solver": RunnerDefinition(
-        "reference-solver", ("verify-case", "--output", "/artifacts")
-    ),
-}
-
-
 class Runner(Protocol):
     def execute(self, request: ExecutionRequest) -> ExecutionResult: ...
 
@@ -53,9 +41,7 @@ class LocalComposeRunner:
     """Run one declared service under a stable container name; never use caller commands."""
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
-        definition = RUNNERS.get(request.runner_key)
-        if definition is None:
-            raise ValueError(f"Runner {request.runner_key!r} is not declared.")
+        definition = runner_definition(request.runner_key)
         request.output_directory.mkdir(parents=True, exist_ok=True)
         command = self._command(request, definition)
         completed: CompletedProcess[str] = run(command, check=False, text=True, capture_output=True)
@@ -145,6 +131,7 @@ class CaseExecutor:
         try:
             result = self.execute(request)
             artifacts = self._publish_manifest(request.output_directory)
+            definition = runner_definition(attempt.runner_key)
             self._mirror.record(
                 attempt.run_id,
                 attempt.attempt_number,
@@ -177,7 +164,13 @@ class CaseExecutor:
             )
             self._mirror.finish_attempt(attempt.run_id, attempt.attempt_number, 125)
             raise
-        self._mirror.finish_attempt(attempt.run_id, attempt.attempt_number, result.exit_code)
+        self._mirror.finish_attempt(
+            attempt.run_id,
+            attempt.attempt_number,
+            result.exit_code,
+            success_outcome=definition.success_outcome,
+            evidence_disposition=definition.evidence_disposition,
+        )
         return attempt, result
 
     def _publish_manifest(self, output_directory: Path) -> list[tuple[str, ArtifactReceipt]]:
@@ -205,4 +198,13 @@ class CaseExecutor:
             published.append(
                 (entry["role"], self._publisher.put_bytes(source.read_bytes(), media_type))
             )
+        if any(role == "field-set-manifest" for role, _receipt in published):
+            required = {
+                "field-set-manifest",
+                "field/displacement/xdmf",
+                "field/displacement/hdf5",
+                "field/displacement/acceptance",
+            }
+            if not required.issubset({role for role, _receipt in published}):
+                raise ValueError("Field export manifest omits required declared artifact roles.")
         return published

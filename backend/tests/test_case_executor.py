@@ -44,8 +44,8 @@ class FakeMirror:
     def record(self, run_id, attempt_number, observation) -> None:
         self.observations.append((run_id, attempt_number, observation))
 
-    def finish_attempt(self, run_id, attempt_number, exit_code) -> None:
-        self.finished.append((run_id, attempt_number, exit_code))
+    def finish_attempt(self, run_id, attempt_number, exit_code, **kwargs) -> None:
+        self.finished.append((run_id, attempt_number, exit_code, kwargs))
 
 
 class SuccessfulRunner:
@@ -64,5 +64,12 @@ def test_executor_claims_one_declared_attempt_records_observation_and_never_retr
     assert first is not None
     assert first[0].runner_key == "reference-solver"
     assert mirror.observations[0][2].event_type == "verification-observed"
-    assert mirror.finished == [("run-1", 1, 0)]
+    assert mirror.finished == [
+        (
+            "run-1",
+            1,
+            0,
+            {"success_outcome": "indeterminate", "evidence_disposition": "indeterminate"},
+        )
+    ]
     assert executor.execute_next(tmp_path) is None

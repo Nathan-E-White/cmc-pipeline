@@ -2,12 +2,12 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: reference-solver <verify-case|solve-case|converge-case|solve-bridged-case|converge-bridged-case|converge-reversible-cohesive-case> --output <directory>" >&2
+  echo "usage: reference-solver <verify-case|solve-case|export-r0-field-case|converge-case|solve-bridged-case|converge-bridged-case|converge-reversible-cohesive-case> --output <directory>" >&2
   exit 64
 }
 
 command="${1:-}"
-[[ "${command}" == "verify-case" || "${command}" == "solve-case" || "${command}" == "converge-case" || "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" || "${command}" == "converge-reversible-cohesive-case" ]] || usage
+[[ "${command}" == "verify-case" || "${command}" == "solve-case" || "${command}" == "export-r0-field-case" || "${command}" == "converge-case" || "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" || "${command}" == "converge-reversible-cohesive-case" ]] || usage
 shift
 [[ "${1:-}" == "--output" && -n "${2:-}" ]] || usage
 output_dir="$2"
@@ -18,13 +18,49 @@ mkdir -p "${output_dir}"
 write_artifact_manifest() {
   status=$?
   [[ "${status}" -eq 0 ]] || exit "${status}"
-  python3 - "${output_dir}" <<'PY'
+  python3 - "${output_dir}" "${command}" <<'PY'
 import json
 import mimetypes
 import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+if sys.argv[2] == "export-r0-field-case":
+    required = ["displacement.xdmf", "displacement.h5"]
+    if not all((root / name).is_file() for name in required):
+        raise SystemExit("field export requires XDMF and HDF5 displacement artifacts")
+    try:
+        audit = json.loads((root / "mesh-audit.json").read_text(encoding="utf-8"))
+        solution = json.loads((root / "solution-summary.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"field export acceptance evidence is unreadable: {error}")
+    if audit.get("status") != "accepted" or solution.get("status") != "solved":
+        raise SystemExit("field export did not pass mesh-audit and solved-status acceptance gates")
+    acceptance = {
+        "version": "cmc.r0-field-acceptance.v1", "status": "accepted",
+        "gates": {"mesh_audit": "accepted", "solution": "solved"},
+        "claim_boundary": "Local-development reference acceptance only; not physical validation.",
+    }
+    (root / "field-acceptance.json").write_text(json.dumps(acceptance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    field_set = {
+        "version": "cmc.field-set-manifest.v1",
+        "field": {
+            "id": "displacement", "name": "displacement_mm", "units": "mm",
+            "association": "node", "components": 3,
+            "xdmf_role": "field/displacement/xdmf", "hdf5_role": "field/displacement/hdf5",
+        },
+        "claim_boundary": "Declared local-development reference evidence; not physical validation.",
+        "acceptance_role": "field/displacement/acceptance",
+    }
+    (root / "field-set-manifest.json").write_text(json.dumps(field_set, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    artifacts = [
+        {"role": "field-set-manifest", "path": "field-set-manifest.json", "media_type": "application/vnd.cmc.field-set-manifest+json"},
+        {"role": "field/displacement/xdmf", "path": "displacement.xdmf", "media_type": "application/x-xdmf+xml"},
+        {"role": "field/displacement/hdf5", "path": "displacement.h5", "media_type": "application/x-hdf5"},
+        {"role": "field/displacement/acceptance", "path": "field-acceptance.json", "media_type": "application/vnd.cmc.r0-field-acceptance+json"},
+    ]
+    (root / "artifact-manifest.json").write_text(json.dumps({"artifacts": artifacts}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    raise SystemExit(0)
 artifacts = []
 for path in sorted(root.iterdir()):
     if not path.is_file() or path.name == "artifact-manifest.json":
@@ -79,7 +115,7 @@ python3 /opt/cmc/python/generate_edge_crack_mesh.py --case /opt/cmc/cases/edge-c
   --output "${mesh_path}" --near-size 2 --far-size 10
 /usr/local/bin/mesh-audit "${mesh_path}" "${output_dir}/mesh-audit.json"
 
-if [[ "${command}" == "solve-case" || "${command}" == "solve-bridged-case" ]]; then
+if [[ "${command}" == "solve-case" || "${command}" == "export-r0-field-case" || "${command}" == "solve-bridged-case" ]]; then
   python3 /opt/cmc/python/solve_edge_crack.py --mesh "${mesh_path}" --output "${output_dir}" \
     --case-card "${case_card}"
 fi

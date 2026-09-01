@@ -20,9 +20,10 @@ bun run check
 bun run build
 ```
 
-The UI renders representative V1 fixture data and its deterministic surrogate
-fixture observation. It does not run an ONNX model, a solver, or a qualified
-engineering analysis. See [`../docs/v1-development.md`](../docs/v1-development.md)
+The UI renders representative V1 fixture data and, for a selected V3 Run Mirror
+record, an `/api/v3/runs/{run_id}/field-artifact` response through the typed Field
+Viewer. It does not parse solver files, run an ONNX model or solver, or establish
+a qualified engineering analysis. See [`../docs/v1-development.md`](../docs/v1-development.md)
 for the complete boundary and future-adapter notes.
 
 ## Starter-framework reference

@@ -9,9 +9,11 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
+from minio import Minio
 from pydantic import BaseModel
 
-from app.run_mirror import PostgresRunMirror, RunMirrorError
+from app.field_artifact import FieldArtifact
+from app.run_mirror import MinioDigestStore, PostgresRunMirror, RunMirrorError
 
 router = APIRouter(prefix="/api/v3", tags=["v3-run-register"])
 
@@ -25,6 +27,35 @@ def mirror() -> PostgresRunMirror:
     if not dsn:
         raise HTTPException(503, "V3 Run Mirror is not configured.")
     return PostgresRunMirror(dsn)
+
+
+class LiveFieldArtifactSource:
+    """Production adapter joining the Run Mirror's metadata to MinIO bytes."""
+
+    def __init__(self, run_mirror: PostgresRunMirror, store: MinioDigestStore) -> None:
+        self._mirror = run_mirror
+        self._store = store
+
+    def inspect(self, run_id: str):
+        return self._mirror.inspect(run_id)
+
+    def artifacts(self, run_id: str):
+        return self._mirror.artifacts(run_id)
+
+    def get_bytes(self, artifact):
+        return self._store.get_bytes(artifact)
+
+
+def field_artifact() -> FieldArtifact:
+    endpoint = os.environ.get("CMC_ARTIFACT_ENDPOINT")
+    access_key = os.environ.get("CMC_ARTIFACT_ACCESS_KEY")
+    secret_key = os.environ.get("CMC_ARTIFACT_SECRET_KEY")
+    if not endpoint or not access_key or not secret_key:
+        raise HTTPException(503, "V3 artifact store is not configured.")
+    store = MinioDigestStore(
+        Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=False), "cmc-artifacts"
+    )
+    return FieldArtifact(LiveFieldArtifactSource(mirror(), store))
 
 
 @router.get("/runs")
@@ -66,6 +97,14 @@ def detail_page(
     except (RunMirrorError, ValueError) as error:
         raise HTTPException(422, str(error)) from error
     return {"api_version": "v3", "details": details, "next_before_sequence": next_before}
+
+
+@router.get("/runs/{run_id}/field-artifact")
+def get_field_artifact(run_id: str) -> dict:
+    try:
+        return field_artifact().field_artifact(run_id)
+    except (RunMirrorError, ValueError) as error:
+        raise HTTPException(422, str(error)) from error
 
 
 async def event_stream(run_id: str, after_sequence: int) -> AsyncIterator[str]:

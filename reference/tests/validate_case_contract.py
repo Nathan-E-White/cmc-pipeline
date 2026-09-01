@@ -60,6 +60,14 @@ def test_public_runner_declares_the_convergence_artifacts() -> None:
     assert "render_edge_crack_visual.py" in source
 
 
+def test_public_runner_declares_the_r0_field_export_contract() -> None:
+    source = (ROOT / "reference/scripts/reference-solver").read_text(encoding="utf-8")
+    assert "export-r0-field-case" in source
+    assert '"version": "cmc.field-set-manifest.v1"' in source
+    assert '"field/displacement/xdmf"' in source
+    assert '"field/displacement/hdf5"' in source
+
+
 def test_v2_bridged_case_declares_a_fixed_closure_traction_tracer() -> None:
     source = (ROOT / "reference/cases/edge-cracked-plate-bridged-v2.json").read_text(
         encoding="utf-8"

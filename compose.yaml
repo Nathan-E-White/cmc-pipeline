@@ -67,8 +67,10 @@ services:
     build:
       context: ./backend
     environment:
+      CMC_ARTIFACT_ACCESS_KEY: cmc-local
       CMC_RUN_MIRROR_DSN: postgresql://cmc:local-development-only@postgres:5432/cmc_pipeline
       CMC_ARTIFACT_ENDPOINT: minio:9000
+      CMC_ARTIFACT_SECRET_KEY: local-development-only
     labels:
       com.radiant.chaos-enabled: "true"
     depends_on:

@@ -45,7 +45,7 @@ CMC_ARTIFACT_SECRET_KEY=local-development-only \\
 ### V3 serial executor
 
 The `executor` Compose service claims one queued V3 attempt at a time, invokes
-only the declared `reference-solver` runner, validates its artifact manifest,
+only a declared runner, validates its artifact manifest,
 and publishes declared bytes to MinIO through the Run Mirror. It uses the host
 Docker socket to launch the runner container; enable it only for this trusted
 local-development composition:
@@ -54,10 +54,12 @@ local-development composition:
 docker --context orbstack compose up -d executor
 ```
 
-An HTTP submission is picked up automatically. The current runner executes
+An HTTP submission is picked up automatically. `reference-solver` executes
 `verify-case`, so an exit code of zero is recorded as a completed verification
 with an `indeterminate` numerical outcome; it must not be read as a solved
-physical case. Exercise the declared container path directly with:
+physical case. `r0-field-export` is separate: it requires an accepted mesh audit
+and solved local reference summary before it can publish an accepted local field
+artifact. Neither runner establishes physical validation. Exercise the declared container path directly with:
 
 ```sh
 CMC_RUN_MIRROR_DSN=postgresql://cmc:local-development-only@localhost:5433/cmc_pipeline \\

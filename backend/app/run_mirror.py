@@ -13,6 +13,8 @@ import psycopg
 from minio import Minio
 from minio.error import S3Error
 
+from app.runner_registry import RUNNERS
+
 
 class RunMirrorError(Exception):
     """Raised when a caller asks the Run Mirror to violate its contract."""
@@ -139,9 +141,9 @@ class PostgresRunMirror:
         digest = canonical_case_digest(case_card)
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             runner_key = case_card.get("runner_key", "reference-solver")
-            if runner_key != "reference-solver":
+            if runner_key not in RUNNERS:
                 raise RunMirrorError(
-                    "The local executor only admits declared runner 'reference-solver'."
+                    f"The local executor only admits declared runners: {', '.join(sorted(RUNNERS))}."
                 )
             cursor.execute(
                 "INSERT INTO case_cards (case_digest, card) VALUES (%s, %s) "
@@ -239,9 +241,17 @@ class PostgresRunMirror:
             )
         return RunAttempt(str(row[0]), row[1], row[2], row[3], "running")
 
-    def finish_attempt(self, run_id: str, attempt_number: int, exit_code: int) -> RunSnapshot:
+    def finish_attempt(
+        self,
+        run_id: str,
+        attempt_number: int,
+        exit_code: int,
+        *,
+        success_outcome: str = "indeterminate",
+        evidence_disposition: str = "indeterminate",
+    ) -> RunSnapshot:
         """Record process completion without turning verification into a solution claim."""
-        outcome = "indeterminate" if exit_code == 0 else "failed"
+        outcome = success_outcome if exit_code == 0 else "failed"
         event_type = "attempt-finished" if exit_code == 0 else "attempt-failed"
         return self.record(
             run_id,
@@ -260,7 +270,7 @@ class PostgresRunMirror:
                 else ["Runner exited nonzero; artifacts remain available for review."],
                 lifecycle="terminal",
                 outcome=outcome,
-                evidence_disposition="indeterminate",
+                evidence_disposition=evidence_disposition if exit_code == 0 else "unavailable",
             ),
         )
 
@@ -454,6 +464,18 @@ class PostgresRunMirror:
             raise RunMirrorError("An artifact role is required.")
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             self._link_artifact(cursor, UUID(run_id), role, artifact)
+
+    def artifacts(self, run_id: str) -> dict[str, ArtifactReceipt]:
+        """Return declared artifact identities by role; never infer a storage path."""
+        with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ra.role, a.sha256, a.byte_length, a.media_type, a.storage_key "
+                "FROM run_artifacts ra JOIN artifacts a ON a.sha256 = ra.sha256 "
+                "WHERE ra.run_id = %s ORDER BY ra.role",
+                (UUID(run_id),),
+            )
+            rows = cursor.fetchall()
+        return {row[0]: ArtifactReceipt(row[1], row[2], row[3], row[4]) for row in rows}
 
     def record(self, run_id: str, attempt_number: int, observation: RunObservation) -> RunSnapshot:
         """Append evidence and refresh only its compact projection in one transaction."""
