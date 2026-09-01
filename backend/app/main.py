@@ -8,8 +8,10 @@ from fastapi.responses import JSONResponse
 
 from app.fixture_corpus import fixture_corpus
 from app.fixture_workflow import FixtureWorkflowError, ReferenceRunService, VerificationService
+from app.v3_api import router as v3_router
 
 app = FastAPI(title="CMC Pipeline Fixture API", version="v1")
+app.include_router(v3_router)
 _CASE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 reference_runs = ReferenceRunService(fixture_corpus)
 verifications = VerificationService(reference_runs, fixture_corpus)
@@ -39,6 +41,8 @@ async def command_request(request: Request, error_code: str) -> dict | JSONRespo
 @app.middleware("http")
 async def normalise_method_not_allowed(request: Request, call_next):
     accept = request.headers.get("accept", "*/*")
+    if request.url.path.startswith("/api/v3/") and "text/event-stream" in accept:
+        return await call_next(request)
     if "application/json" not in accept and "*/*" not in accept:
         return error_response(406, "not_acceptable", "This API serves JSON responses only.")
     response = await call_next(request)
@@ -64,10 +68,14 @@ async def normalise_method_not_allowed(request: Request, call_next):
 
 def require_case(case_id: str):
     if not _CASE_ID.fullmatch(case_id):
-        return None, error_response(400, "invalid_case_id", "The supplied identifier is not a valid slug.")
+        return None, error_response(
+            400, "invalid_case_id", "The supplied identifier is not a valid slug."
+        )
     case = fixture_corpus.find(case_id)
     if case is None:
-        return None, error_response(404, "case_not_found", "No fixture case exists for the supplied identifier.")
+        return None, error_response(
+            404, "case_not_found", "No fixture case exists for the supplied identifier."
+        )
     return case, None
 
 
@@ -183,7 +191,9 @@ def get_mesh(case_id: str):
         return error
     mesh = fixture_corpus.mesh(case_id)
     if mesh is None:
-        return error_response(404, "artifact_not_available", "No mesh fixture is available for this case.")
+        return error_response(
+            404, "artifact_not_available", "No mesh fixture is available for this case."
+        )
     return {
         "api_version": "v1",
         "fixture": fixture_corpus.descriptor(case_id),

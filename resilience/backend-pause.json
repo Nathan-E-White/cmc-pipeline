@@ -1,0 +1,16 @@
+{
+  "id": "v3-backend-pause",
+  "title": "Backend pause preserves scoped recovery",
+  "hypothesis": "Pausing the opted-in local backend makes its HTTP probe unavailable and unpausing it restores the fixture probe without changing Compose volumes.",
+  "environment": "local-development",
+  "docker_context": "orbstack",
+  "compose_project": "cmc-pipeline-v3",
+  "service": "backend",
+  "fault": {"kind": "pause", "duration_seconds": 5},
+  "limits": {"total_seconds": 45, "probe_seconds": 5, "recovery_seconds": 15},
+  "probes": {
+    "baseline": "http://127.0.0.1:8000/api/v1/cases",
+    "during_fault": "http://127.0.0.1:8000/api/v1/cases",
+    "recovery": "http://127.0.0.1:8000/api/v1/cases"
+  }
+}

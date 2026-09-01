@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000",
-		"test": "bun run test:client && bun run test:ui",
-		"test:client": "bun test src/simulation-client.test.ts",
-		"test:ui": "vitest run",
+    "test": "bun run test:client && bun run test:ui",
+    "test:client": "bun test src/simulation-client.test.ts",
+    "test:ui": "vitest run",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
@@ -16,6 +16,7 @@
     "check": "biome check"
   },
   "dependencies": {
+    "@electric-sql/client": "1.5.19",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/solid-db": "^0.2.41",
     "@tanstack/solid-query": "^5.102.8",
@@ -23,6 +24,7 @@
     "@tanstack/solid-router-devtools": "latest",
     "@tanstack/solid-start": "latest",
     "@tanstack/solid-table": "^9.2.4",
+    "@tanstack/solid-virtual": "^3.13.12",
     "solid-js": "^1.9.12",
     "solid-three": "^0.2.0",
     "tailwindcss": "^4.1.18"

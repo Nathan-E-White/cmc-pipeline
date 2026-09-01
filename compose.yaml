@@ -3,6 +3,7 @@ name: cmc-pipeline-v3
 services:
   postgres:
     image: postgres:17.6-alpine
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
     environment:
       POSTGRES_DB: cmc_pipeline
       POSTGRES_USER: cmc
@@ -53,6 +54,7 @@ services:
     image: electricsql/electric:1.7.12
     environment:
       DATABASE_URL: postgresql://cmc:local-development-only@postgres:5432/cmc_pipeline
+      ELECTRIC_INSECURE: "true" # local-only Compose projection service
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -67,13 +69,37 @@ services:
     environment:
       CMC_RUN_MIRROR_DSN: postgresql://cmc:local-development-only@postgres:5432/cmc_pipeline
       CMC_ARTIFACT_ENDPOINT: minio:9000
+    labels:
+      com.radiant.chaos-enabled: "true"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
     ports:
       - "8000:8000"
+
+  executor:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.executor_worker"]
+    environment:
+      CMC_ARTIFACT_ACCESS_KEY: cmc-local
+      CMC_ARTIFACT_ENDPOINT: minio:9000
+      CMC_ARTIFACT_SECRET_KEY: local-development-only
+      CMC_EXECUTOR_DOCKER_SOCKET: "true"
+      CMC_EXECUTOR_SCRATCH: /scratch
+      CMC_RUN_MIRROR_DSN: postgresql://cmc:local-development-only@postgres:5432/cmc_pipeline
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-scratch:/scratch
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
 
   frontend:
     build:
@@ -94,3 +120,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  executor-scratch:

@@ -52,8 +52,14 @@ class RunRegisterProjection:
         summary = RunSummary(
             run_id,
             revision,
-            EvidenceSummary(evidence.phase_key, evidence.state, evidence.headline, trend,
-                            evidence.container_observed_at, evidence.solver_evidence_at),
+            EvidenceSummary(
+                evidence.phase_key,
+                evidence.state,
+                evidence.headline,
+                trend,
+                evidence.container_observed_at,
+                evidence.solver_evidence_at,
+            ),
         )
         self._summaries[run_id] = summary
         return summary

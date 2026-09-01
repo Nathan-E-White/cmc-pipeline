@@ -13,6 +13,36 @@ shift
 output_dir="$2"
 mkdir -p "${output_dir}"
 
+# The runner owns numerical files only.  On successful completion it supplies a
+# declarative artifact manifest; the host-side Case Executor validates and publishes it.
+write_artifact_manifest() {
+  status=$?
+  [[ "${status}" -eq 0 ]] || exit "${status}"
+  python3 - "${output_dir}" <<'PY'
+import json
+import mimetypes
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+artifacts = []
+for path in sorted(root.iterdir()):
+    if not path.is_file() or path.name == "artifact-manifest.json":
+        continue
+    media_type, _ = mimetypes.guess_type(path.name)
+    artifacts.append({
+        "role": f"runner-output/{path.name}",
+        "path": path.name,
+        "media_type": media_type or "application/octet-stream",
+    })
+(root / "artifact-manifest.json").write_text(
+    json.dumps({"artifacts": artifacts}, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+trap write_artifact_manifest EXIT
+
 case_card="/opt/cmc/cases/edge-cracked-plate-v1.json"
 case_id="edge-cracked-plate-v1"
 if [[ "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" ]]; then
