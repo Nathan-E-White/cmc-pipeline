@@ -1,0 +1,10 @@
+{
+  "case_id": "r0-elastic-displacement-v1",
+  "problem_key": "r0-elastic/v1",
+  "status": "plane-strain-displacement-controlled-reference",
+  "geometry": {"width_mm": 100, "height_mm": 200, "crack_length_mm": 30, "crack_y_mm": 100},
+  "model": {"assumption": "plane_strain", "youngs_modulus_gpa": 200, "poissons_ratio": 0.3},
+  "loading": {"kind": "prescribed-top-displacement", "top_displacement_mm": 0.05},
+  "fracture_quantity": {"method": "domain-integral", "contour_radii_mm": [8, 12]},
+  "claim_boundary": "Declared R0 numerical reference case only; not physical validation, qualification, or design authority."
+}

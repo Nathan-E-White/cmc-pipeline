@@ -13,7 +13,7 @@ import psycopg
 from minio import Minio
 from minio.error import S3Error
 
-from app.runner_registry import RUNNERS
+from app.workflow_compiler import AttemptPlan, WorkflowCompiler, WorkflowRefusal
 
 
 class RunMirrorError(Exception):
@@ -79,6 +79,7 @@ class RunAttempt:
     runner_key: str
     container_name: str
     state: str
+    case_card: dict[str, Any] | None = None
 
 
 def canonical_case_digest(case_card: dict[str, Any]) -> str:
@@ -135,16 +136,38 @@ class PostgresRunMirror:
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
 
+    def case_card(self, run_id: str) -> dict[str, Any]:
+        """Return the immutable admitted card; downstream corpus code never trusts a caller copy."""
+        with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT c.card FROM runs r JOIN case_cards c ON c.case_digest = r.case_digest WHERE r.run_id = %s",
+                (UUID(run_id),),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], dict):
+            raise RunMirrorError("Run has no immutable case card.")
+        return row[0]
+
     def submit(self, case_card: dict[str, Any], idempotency_key: str) -> RunSnapshot:
         if not idempotency_key:
             raise RunMirrorError("An idempotency key is required.")
         digest = canonical_case_digest(case_card)
+        workflow_key = case_card.get("workflow_key")
+        compiled = WorkflowCompiler().compile(
+            AttemptPlan(
+                "admission",
+                1,
+                case_card,
+                str(workflow_key or ""),
+                "compose",
+                declared_inputs=("declared-case-card",),
+            )
+        )
+        if isinstance(compiled, WorkflowRefusal):
+            raise RunMirrorError(
+                f"Case card is not admitted by the workflow catalog: {compiled.reason}."
+            )
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
-            runner_key = case_card.get("runner_key", "reference-solver")
-            if runner_key not in RUNNERS:
-                raise RunMirrorError(
-                    f"The local executor only admits declared runners: {', '.join(sorted(RUNNERS))}."
-                )
             cursor.execute(
                 "INSERT INTO case_cards (case_digest, card) VALUES (%s, %s) "
                 "ON CONFLICT (case_digest) DO NOTHING",
@@ -185,7 +208,7 @@ class PostgresRunMirror:
             cursor.execute(
                 "INSERT INTO run_attempts (run_id, attempt_number, runner_key, container_name, state) "
                 "VALUES (%s, 1, %s, %s, 'queued')",
-                (run_id, runner_key, f"cmc-v3-{run_id}-attempt-1"),
+                (run_id, str(workflow_key), f"cmc-v3-{run_id}-attempt-1"),
             )
             return RunSnapshot(str(run_id), digest, "submitted", None, 1)
 
@@ -194,8 +217,9 @@ class PostgresRunMirror:
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             target = " AND a.run_id = %s" if run_id else ""
             cursor.execute(
-                "SELECT a.run_id, a.attempt_number, a.runner_key, a.container_name, a.state "
+                "SELECT a.run_id, a.attempt_number, a.runner_key, a.container_name, a.state, c.card "
                 "FROM run_attempts a JOIN runs r ON r.run_id = a.run_id "
+                "JOIN case_cards c ON c.case_digest = r.case_digest "
                 f"WHERE a.state = 'queued' AND r.lifecycle = 'submitted'{target} "
                 "ORDER BY r.created_at FOR UPDATE OF a, r SKIP LOCKED LIMIT 1",
                 (UUID(run_id),) if run_id else (),
@@ -222,7 +246,7 @@ class PostgresRunMirror:
                     row[1],
                     revision,
                     self._next_attempt_sequence(cursor, run_id, row[1]),
-                    json.dumps({"runner_key": row[2], "container_name": row[3]}),
+                    json.dumps({"workflow_key": row[2], "container_name": row[3]}),
                 ),
             )
             cursor.execute(
@@ -239,7 +263,7 @@ class PostgresRunMirror:
                     json.dumps({"text": "Local serial executor admitted this attempt."}),
                 ),
             )
-        return RunAttempt(str(row[0]), row[1], row[2], row[3], "running")
+        return RunAttempt(str(row[0]), row[1], row[2], row[3], "running", row[5])
 
     def finish_attempt(
         self,

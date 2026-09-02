@@ -78,6 +78,15 @@ class DeclaredFieldSet:
                 get_bytes,
             )
         )
+        if "pair_map_role" in manifest:
+            cls._pair_map(
+                cls._required_bytes(
+                    artifacts,
+                    manifest["pair_map_role"],
+                    "application/vnd.cmc.opened-crack-pairs+json",
+                    get_bytes,
+                )
+            )
         return cls(
             field=field,
             xdmf=cls._required_bytes(
@@ -114,6 +123,16 @@ class DeclaredFieldSet:
                 raise FieldSetError("invalid_acceptance")
             with open(acceptance[0], "rb") as stream:
                 cls._acceptance(stream.read())
+            pair_role = value.get("pair_map_role")
+            if pair_role is not None:
+                if (
+                    not isinstance(pair_role, str)
+                    or files.get(pair_role, ("", ""))[1]
+                    != "application/vnd.cmc.opened-crack-pairs+json"
+                ):
+                    raise FieldSetError("missing_paired_lip_evidence")
+                with open(files[pair_role][0], "rb") as stream:
+                    cls._pair_map(stream.read())
             local_artifacts = {
                 role: LocalArtifact(path, "local", media_type)
                 for role, (path, media_type) in files.items()
@@ -134,6 +153,7 @@ class DeclaredFieldSet:
                 field["xdmf_role"],
                 field["hdf5_role"],
                 manifest["acceptance_role"],
+                *([manifest["pair_map_role"]] if "pair_map_role" in manifest else []),
             }
         )
 
@@ -171,6 +191,10 @@ class DeclaredFieldSet:
             raise FieldSetError("invalid_manifest")
         if not isinstance(value.get("acceptance_role"), str) or not value["acceptance_role"]:
             raise FieldSetError("invalid_manifest")
+        if "pair_map_role" in value and (
+            not isinstance(value["pair_map_role"], str) or not value["pair_map_role"]
+        ):
+            raise FieldSetError("invalid_manifest")
         return value
 
     @staticmethod
@@ -186,6 +210,19 @@ class DeclaredFieldSet:
             raise FieldSetError("invalid_acceptance")
         if value.get("status") != "accepted" or value.get("gates") != policy.gates:
             raise FieldSetError("field_not_accepted")
+
+    @staticmethod
+    def _pair_map(content: bytes) -> None:
+        try:
+            value = json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise FieldSetError("invalid_paired_lip_evidence") from error
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("ordered_element_pairs"), list)
+            or not value["ordered_element_pairs"]
+        ):
+            raise FieldSetError("invalid_paired_lip_evidence")
 
     def browser_payload(self) -> dict[str, Any]:
         """Project the declared supported field without revealing raw artifact paths."""

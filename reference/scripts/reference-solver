@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: reference-solver <verify-case|solve-case|export-r0-field-case|converge-case|solve-bridged-case|converge-bridged-case|converge-reversible-cohesive-case> --output <directory>" >&2
+  echo "usage: reference-solver <verify-case|solve-case|export-r0-field-case|converge-case|solve-bridged-case|converge-bridged-case|converge-reversible-cohesive-case> --output <directory> [--case-card <path>]" >&2
   exit 64
 }
 
@@ -11,6 +11,13 @@ command="${1:-}"
 shift
 [[ "${1:-}" == "--output" && -n "${2:-}" ]] || usage
 output_dir="$2"
+shift 2
+case_card_override=""
+if [[ "${1:-}" == "--case-card" && -n "${2:-}" ]]; then
+  case_card_override="$2"
+  shift 2
+fi
+[[ $# -eq 0 ]] || usage
 mkdir -p "${output_dir}"
 
 # The runner owns numerical files only.  On successful completion it supplies a
@@ -51,6 +58,7 @@ if sys.argv[2] == "export-r0-field-case":
         },
         "claim_boundary": "Declared local-development reference evidence; not physical validation.",
         "acceptance_role": "field/displacement/acceptance",
+        "pair_map_role": "field/displacement/pair-map",
     }
     (root / "field-set-manifest.json").write_text(json.dumps(field_set, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     artifacts = [
@@ -58,6 +66,7 @@ if sys.argv[2] == "export-r0-field-case":
         {"role": "field/displacement/xdmf", "path": "displacement.xdmf", "media_type": "application/x-xdmf+xml"},
         {"role": "field/displacement/hdf5", "path": "displacement.h5", "media_type": "application/x-hdf5"},
         {"role": "field/displacement/acceptance", "path": "field-acceptance.json", "media_type": "application/vnd.cmc.r0-field-acceptance+json"},
+        {"role": "field/displacement/pair-map", "path": "crack-face-pairs.json", "media_type": "application/vnd.cmc.opened-crack-pairs+json"},
     ]
     (root / "artifact-manifest.json").write_text(json.dumps({"artifacts": artifacts}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     raise SystemExit(0)
@@ -84,6 +93,10 @@ case_id="edge-cracked-plate-v1"
 if [[ "${command}" == "solve-bridged-case" || "${command}" == "converge-bridged-case" ]]; then
   case_card="/opt/cmc/cases/edge-cracked-plate-bridged-v2.json"
   case_id="edge-cracked-plate-bridged-v2"
+fi
+if [[ -n "${case_card_override}" ]]; then
+  case_card="${case_card_override}"
+  case_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["case_id"])' "${case_card}")"
 fi
 if [[ "${command}" == "converge-reversible-cohesive-case" ]]; then
   python3 /opt/cmc/python/converge_reversible_cohesive_edge_crack.py \
@@ -112,7 +125,7 @@ if [[ "${command}" == "converge-case" || "${command}" == "converge-bridged-case"
 fi
 
 python3 /opt/cmc/python/generate_edge_crack_mesh.py --case /opt/cmc/cases/edge-cracked-plate-v1.geo \
-  --output "${mesh_path}" --near-size 2 --far-size 10
+  --output "${mesh_path}" --near-size 2 --far-size 10 --crack-face-pairs-output "${output_dir}/crack-face-pairs.json"
 /usr/local/bin/mesh-audit "${mesh_path}" "${output_dir}/mesh-audit.json"
 
 if [[ "${command}" == "solve-case" || "${command}" == "export-r0-field-case" || "${command}" == "solve-bridged-case" ]]; then
@@ -129,7 +142,7 @@ from pathlib import Path
 import dolfinx
 
 case_card = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
-solved = sys.argv[2] in {"solve-case", "solve-bridged-case"}
+solved = sys.argv[2] in {"solve-case", "solve-bridged-case", "export-r0-field-case"}
 payload = {
     "gmsh_version": subprocess.check_output(["gmsh", "-version"], text=True).strip(),
     "dolfinx_version": getattr(dolfinx, "__version__", "unknown"),

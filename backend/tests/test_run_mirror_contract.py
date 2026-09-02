@@ -40,14 +40,14 @@ def artifact_store() -> MinioDigestStore:
     )
 
 
+def r0_card(case_id: str = "r0-elastic-displacement-e200-v1") -> dict[str, object]:
+    return {"case_id": case_id, "version": 1, "workflow_key": "r0-reference-field-export/v1"}
+
+
 def test_submission_is_idempotent_and_reconstructs_after_a_new_adapter(
     run_mirror: PostgresRunMirror,
 ) -> None:
-    card = {
-        "case_id": "r0-smoke",
-        "version": 1,
-        "declared_exclusions": ["calibration"],
-    }
+    card = r0_card()
     key = f"contract-restart-r0-{uuid4()}"
     first = run_mirror.submit(card, key)
 
@@ -62,7 +62,7 @@ def test_submission_is_idempotent_and_reconstructs_after_a_new_adapter(
 def test_queued_cancel_is_an_ordered_terminal_lifecycle_fact_and_refreshes_its_projection(
     run_mirror: PostgresRunMirror,
 ) -> None:
-    run = run_mirror.submit({"case_id": "r0-cancel", "version": 1}, f"contract-cancel-r0-{uuid4()}")
+    run = run_mirror.submit(r0_card(), f"contract-cancel-r0-{uuid4()}")
 
     cancelled = run_mirror.request_cancel(run.run_id)
     assert (cancelled.lifecycle, cancelled.outcome) == ("terminal", "cancelled")
@@ -84,7 +84,7 @@ def test_queued_cancel_is_an_ordered_terminal_lifecycle_fact_and_refreshes_its_p
 def test_claim_finish_and_detail_pages_persist_a_serial_attempt(
     run_mirror: PostgresRunMirror,
 ) -> None:
-    run = run_mirror.submit({"case_id": "r0-claim", "version": 1}, f"contract-claim-r0-{uuid4()}")
+    run = run_mirror.submit(r0_card(), f"contract-claim-r0-{uuid4()}")
 
     attempt = run_mirror.claim_next_attempt(run.run_id)
 
@@ -104,9 +104,7 @@ def test_claim_finish_and_detail_pages_persist_a_serial_attempt(
 def test_missing_container_recovery_records_failure_without_retry(
     run_mirror: PostgresRunMirror,
 ) -> None:
-    run = run_mirror.submit(
-        {"case_id": "r0-recovery", "version": 1}, f"contract-recovery-r0-{uuid4()}"
-    )
+    run = run_mirror.submit(r0_card(), f"contract-recovery-r0-{uuid4()}")
     run_mirror.claim_next_attempt(run.run_id)
 
     recovered = run_mirror.recover_missing_container(run.run_id, 1)
@@ -122,16 +120,16 @@ def test_idempotency_key_cannot_represent_two_case_cards(
     run_mirror: PostgresRunMirror,
 ) -> None:
     key = f"contract-conflict-r0-{uuid4()}"
-    run_mirror.submit({"case_id": "r0-a", "version": 1}, key)
+    run_mirror.submit(r0_card("r0-elastic-displacement-e180-v1"), key)
 
     with pytest.raises(RunMirrorError, match="different case"):
-        run_mirror.submit({"case_id": "r0-b", "version": 1}, key)
+        run_mirror.submit(r0_card("r0-elastic-displacement-e220-v1"), key)
 
 
 def test_concurrent_submission_with_one_key_converges_on_one_run(
     run_mirror: PostgresRunMirror,
 ) -> None:
-    card = {"case_id": "r0-concurrent", "version": 1}
+    card = r0_card()
     key = f"contract-concurrent-r0-{uuid4()}"
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -149,9 +147,7 @@ def test_minio_artifact_is_content_addressed_and_recorded(
     run_mirror: PostgresRunMirror,
     artifact_store: MinioDigestStore,
 ) -> None:
-    run = run_mirror.submit(
-        {"case_id": "r0-artifact", "version": 1}, f"contract-artifact-r0-{uuid4()}"
-    )
+    run = run_mirror.submit(r0_card(), f"contract-artifact-r0-{uuid4()}")
     content = b"declared local development evidence\\n"
     receipt = artifact_store.put_bytes(content, "text/plain")
 

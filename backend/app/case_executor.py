@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CompletedProcess, run
 from typing import Protocol
 
-from app.field_set import FieldSetError
+from app.artifact_collector import DeclaredOutputSet, PublicationRefusal, TypedArtifactCollector
 from app.run_mirror import ArtifactReceipt, PostgresRunMirror, RunAttempt, RunObservation
-from app.runner_registry import RunnerDefinition, runner_definition
+from app.workflow_compiler import AttemptPlan, WorkflowCompiler, WorkflowRefusal
 
 
 @dataclass(frozen=True)
@@ -22,6 +21,8 @@ class ExecutionRequest:
     runner_key: str
     container_name: str
     output_directory: Path
+    command: tuple[str, ...] | None = None
+    stage_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,9 +44,8 @@ class LocalComposeRunner:
     """Run one declared service under a stable container name; never use caller commands."""
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
-        definition = runner_definition(request.runner_key)
         request.output_directory.mkdir(parents=True, exist_ok=True)
-        command = self._command(request, definition)
+        command = self._command(request)
         completed: CompletedProcess[str] = run(command, check=False, text=True, capture_output=True)
         if os.environ.get("CMC_EXECUTOR_DOCKER_SOCKET") == "true":
             run(
@@ -67,15 +67,18 @@ class LocalComposeRunner:
         return completed.returncode == 0 and completed.stdout.strip() == "true"
 
     @staticmethod
-    def _command(request: ExecutionRequest, definition: RunnerDefinition) -> list[str]:
+    def _command(request: ExecutionRequest) -> list[str]:
+        if request.command is None or not request.runner_key:
+            raise ValueError("A compiled workload stage requires a catalog adapter and command.")
+        command = request.command
         if os.environ.get("CMC_EXECUTOR_DOCKER_SOCKET") == "true":
             return [
                 "docker",
                 "run",
                 "--name",
                 request.container_name,
-                f"cmc-pipeline-v3-{definition.service}",
-                *definition.command,
+                f"cmc-pipeline-v3-{request.runner_key}",
+                *command,
             ]
         return [
             "docker",
@@ -89,8 +92,8 @@ class LocalComposeRunner:
             f"{request.output_directory.resolve()}:/artifacts",
             "--entrypoint",
             "/opt/cmc/bin/reference-solver",
-            definition.service,
-            *definition.command,
+            request.runner_key,
+            *command,
         ]
 
 
@@ -102,10 +105,12 @@ class CaseExecutor:
         runner: Runner,
         mirror: PostgresRunMirror | None = None,
         publisher: ArtifactPublisher | None = None,
+        compiler: WorkflowCompiler | None = None,
     ) -> None:
         self._runner = runner
         self._mirror = mirror
         self._publisher = publisher
+        self._compiler = compiler or WorkflowCompiler()
         self._active_run_id: str | None = None
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
@@ -117,10 +122,12 @@ class CaseExecutor:
         finally:
             self._active_run_id = None
 
-    def execute_next(self, scratch_root: Path) -> tuple[RunAttempt, ExecutionResult] | None:
+    def execute_next(
+        self, scratch_root: Path, run_id: str | None = None
+    ) -> tuple[RunAttempt, ExecutionResult] | None:
         if self._mirror is None:
             raise RuntimeError("execute_next requires a Run Mirror.")
-        attempt = self._mirror.claim_next_attempt()
+        attempt = self._mirror.claim_next_attempt(run_id)
         if attempt is None:
             return None
         request = ExecutionRequest(
@@ -131,29 +138,46 @@ class CaseExecutor:
             scratch_root / attempt.run_id / str(attempt.attempt_number),
         )
         try:
-            result = self.execute(request)
-            definition = runner_definition(attempt.runner_key)
-            artifacts = self._publish_manifest(
-                request.output_directory,
-                definition.requires_artifact_manifest,
-                definition.artifact_validator,
+            from app.workflow_runtime import ExecutionRefusal, WorkflowRuntime
+
+            card = attempt.case_card or {}
+            workflow = self._compiler.compile(
+                AttemptPlan(
+                    attempt.run_id,
+                    attempt.attempt_number,
+                    card,
+                    str(card.get("workflow_key", "")),
+                    "compose",
+                    declared_inputs=("declared-case-card",),
+                )
             )
-            self._mirror.record(
-                attempt.run_id,
-                attempt.attempt_number,
-                RunObservation(
-                    phase_key=definition.phase_key,
-                    event_type=definition.event_type,
-                    payload={"exit_code": result.exit_code},
-                    phase_state="completed" if result.exit_code == 0 else "failed",
-                    headline={"exit_code": result.exit_code},
-                    trend={},
-                    warnings=[definition.success_warning]
-                    if result.exit_code == 0
-                    else [definition.failure_warning],
-                    artifacts=tuple(artifacts),
-                ),
-            )
+            if isinstance(workflow, WorkflowRefusal):
+                self._record_fact(attempt, "workflow", "workflow-refused", workflow.reason)
+                raise TypeError(f"Workflow refused: {workflow.reason}")
+
+            def collect(stage) -> tuple[tuple[str, ArtifactReceipt], ...]:
+                if stage.collector_profile is None:
+                    raise ValueError("Collector stage lacks a typed profile.")
+                return tuple(
+                    self._publish_manifest(request.output_directory, True, stage.collector_profile)
+                )
+
+            execution = WorkflowRuntime(self._runner).execute(workflow, request, collect)
+            for fact in execution.facts:
+                self._record_fact(
+                    attempt,
+                    fact.stage_key,
+                    fact.event_type,
+                    fact.reason,
+                    fact.exit_code,
+                    tuple(execution.artifacts)
+                    if fact.stage_key == "collect-reference-field"
+                    and fact.event_type == "stage-finished"
+                    else (),
+                )
+            if isinstance(execution, ExecutionRefusal):
+                raise TypeError(f"Workflow execution refused: {execution.reason}")
+            result = execution.result
         except Exception as error:
             self._mirror.record(
                 attempt.run_id,
@@ -174,21 +198,51 @@ class CaseExecutor:
             attempt.run_id,
             attempt.attempt_number,
             result.exit_code,
-            success_outcome=definition.success_outcome,
-            evidence_disposition=definition.evidence_disposition,
-            phase_key=definition.terminal_phase_key,
-            success_event_type=definition.terminal_success_event_type,
-            failure_event_type=definition.terminal_failure_event_type,
-            success_warning=definition.terminal_success_warning,
-            failure_warning=definition.terminal_failure_warning,
+            success_outcome="solved",
+            evidence_disposition="accepted",
+            phase_key="publish",
+            success_event_type="field-export-finished",
+            failure_event_type="field-export-failed",
+            success_warning="Accepted local R0 reference field export completed; not physical validation.",
+            failure_warning="R0 field export failed; published artifacts remain available for review.",
         )
         return attempt, result
+
+    def _record_fact(
+        self,
+        attempt: RunAttempt,
+        phase_key: str,
+        event_type: str,
+        reason: str | None = None,
+        exit_code: int | None = None,
+        artifacts: tuple[tuple[str, ArtifactReceipt], ...] = (),
+    ) -> None:
+        self._mirror.record(
+            attempt.run_id,
+            attempt.attempt_number,
+            RunObservation(
+                phase_key=phase_key,
+                event_type=event_type,
+                payload={
+                    key: value
+                    for key, value in {"reason": reason, "exit_code": exit_code}.items()
+                    if value is not None
+                },
+                phase_state="failed"
+                if event_type in {"stage-failed", "workflow-refused"}
+                else "completed",
+                headline={"stage": phase_key},
+                trend={},
+                warnings=[reason] if reason else [],
+                artifacts=artifacts,
+            ),
+        )
 
     def _publish_manifest(
         self,
         output_directory: Path,
         required: bool,
-        validator: Callable[[dict[str, tuple[str, str]]], None] | None,
+        collector_profile: str | None,
     ) -> list[tuple[str, ArtifactReceipt]]:
         """Validate a manifest and publish only explicitly declared local files."""
         manifest_path = output_directory / "artifact-manifest.json"
@@ -202,27 +256,23 @@ class CaseExecutor:
         entries = manifest.get("artifacts") if isinstance(manifest, dict) else None
         if not isinstance(entries, list):
             raise TypeError("artifact-manifest.json must contain an artifacts list.")
-        published: list[tuple[str, ArtifactReceipt]] = []
         root = output_directory.resolve()
-        declared_files: dict[str, tuple[str, str]] = {}
+        declared_entries: list[tuple[str, str, str, str | None]] = []
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("role"), str):
                 raise TypeError("Each manifest artifact requires a string role.")
             relative_path, media_type = entry.get("path"), entry.get("media_type")
             if not isinstance(relative_path, str) or not isinstance(media_type, str):
                 raise TypeError("Each manifest artifact requires path and media_type strings.")
-            source = (root / relative_path).resolve()
-            if root not in source.parents or not source.is_file():
-                raise ValueError(
-                    "Manifest artifact must be a file inside the scoped output directory."
-                )
-            published.append(
-                (entry["role"], self._publisher.put_bytes(source.read_bytes(), media_type))
-            )
-            declared_files[entry["role"]] = (str(source), media_type)
-        if validator is not None:
-            try:
-                validator(declared_files)
-            except FieldSetError as error:
-                raise ValueError(f"Declared runner evidence is invalid: {error.reason}") from error
-        return published
+            digest = entry.get("sha256")
+            if digest is not None and not isinstance(digest, str):
+                raise TypeError("Each manifest artifact sha256 must be a string when declared.")
+            declared_entries.append((entry["role"], relative_path, media_type, digest))
+        if collector_profile is None:
+            raise ValueError("Declared runner has artifacts but no collector profile.")
+        collected = TypedArtifactCollector(self._publisher).collect(
+            DeclaredOutputSet(collector_profile, root, tuple(declared_entries))
+        )
+        if isinstance(collected, PublicationRefusal):
+            raise TypeError(f"Declared runner evidence is invalid: {collected.reason}")
+        return list(collected.artifacts)

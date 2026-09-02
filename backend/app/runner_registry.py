@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-
-from app.field_set import DeclaredFieldSet
 
 
 @dataclass(frozen=True)
@@ -19,7 +16,7 @@ class RunnerDefinition:
     success_warning: str
     failure_warning: str
     requires_artifact_manifest: bool = False
-    artifact_validator: Callable[[dict[str, tuple[str, str]]], None] | None = None
+    collector_profile: str | None = None
     terminal_phase_key: str = "publish"
     terminal_success_event_type: str = "attempt-finished"
     terminal_failure_event_type: str = "attempt-failed"
@@ -50,7 +47,7 @@ RUNNERS = {
         "Accepted local reference field export; not physical validation.",
         "Field export runner exited nonzero; inspect published artifacts.",
         True,
-        DeclaredFieldSet.validate_declared_files,
+        "reference-field/v1",
         "publish",
         "field-export-finished",
         "field-export-failed",

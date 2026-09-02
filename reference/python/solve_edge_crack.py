@@ -74,7 +74,10 @@ def main() -> None:
     model = case_card["model"]
     youngs_modulus_mpa = model["youngs_modulus_gpa"] * 1_000.0
     poissons_ratio = model["poissons_ratio"]
-    nominal_traction_mpa = model["nominal_traction_mpa"]
+    loading = case_card.get("loading")
+    nominal_traction_mpa = model.get("nominal_traction_mpa")
+    if loading is None and nominal_traction_mpa is None:
+        raise RuntimeError("Case card must declare traction or displacement loading.")
 
     comm = MPI.COMM_WORLD
     mesh_data = io.gmsh.read_from_msh(args.mesh, comm, rank=0, gdim=2)
@@ -98,10 +101,8 @@ def main() -> None:
     dx = ufl.Measure("dx", domain=domain)
     ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tags)
     a_form = ufl.inner(stress(u), strain(v)) * dx
-    traction = fem.Constant(
-        domain, np.array((0.0, nominal_traction_mpa), dtype=PETSc.ScalarType)
-    )
-    l_form = ufl.dot(traction, v) * ds(physical_groups["loaded"].tag)
+    zero_load = fem.Constant(domain, np.array((0.0, 0.0), dtype=PETSc.ScalarType))
+    l_form = ufl.dot(zero_load, v) * dx
     bridging = model.get("bridging")
     if bridging is not None:
         if bridging["kind"] != "prescribed-crack-face-closure-traction":
@@ -128,10 +129,22 @@ def main() -> None:
     x_dofs = fem.locate_dofs_topological(V.sub(0), 0, anchor_vertices)
     bc_x = fem.dirichletbc(zero, x_dofs, V.sub(0))
 
+    bcs = [bc_y, bc_x]
+    if loading is None:
+        traction = fem.Constant(domain, np.array((0.0, nominal_traction_mpa), dtype=PETSc.ScalarType))
+        l_form += ufl.dot(traction, v) * ds(physical_groups["loaded"].tag)
+    elif loading.get("kind") == "prescribed-top-displacement":
+        loaded_facets = facet_tags.find(physical_groups["loaded"].tag)
+        loaded_dofs = fem.locate_dofs_topological(V.sub(1), domain.topology.dim - 1, loaded_facets)
+        displacement_value = fem.Constant(domain, PETSc.ScalarType(loading["top_displacement_mm"]))
+        bcs.append(fem.dirichletbc(displacement_value, loaded_dofs, V.sub(1)))
+    else:
+        raise RuntimeError("Unsupported declared loading kind.")
+
     problem = LinearProblem(
         a_form,
         l_form,
-        bcs=[bc_y, bc_x],
+        bcs=bcs,
         petsc_options_prefix="edge_crack_",
         petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
     )
@@ -158,14 +171,17 @@ def main() -> None:
         "case_id": case_card["case_id"],
         "status": "solved",
         "model": (
-            "linear-elastic plane strain"
+            "linear-elastic plane strain with prescribed displacement"
+            if loading is not None
+            else "linear-elastic plane strain"
             if bridging is None
             else "linear-elastic plane strain with prescribed crack-face closure traction"
         ),
         "fixed_external_values": {
             "youngs_modulus_mpa": youngs_modulus_mpa,
             "poissons_ratio": poissons_ratio,
-            "nominal_traction_mpa": nominal_traction_mpa,
+            **({"nominal_traction_mpa": nominal_traction_mpa} if nominal_traction_mpa is not None else {}),
+            **({"loading": loading} if loading is not None else {}),
             **({"bridging": bridging} if bridging is not None else {}),
         },
         "displacement_mm": {

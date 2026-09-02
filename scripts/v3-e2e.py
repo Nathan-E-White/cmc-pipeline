@@ -27,28 +27,26 @@ def main() -> None:
         ),
         "cmc-artifacts",
     )
-    runner_key = os.environ.get("CMC_V3_E2E_RUNNER", "reference-solver")
+    case_id = os.environ.get("CMC_V3_E2E_CASE_ID", "r0-elastic-displacement-e200-v1")
     run = mirror.submit(
-        {"case_id": "v3-e2e-reference", "version": 1, "runner_key": runner_key},
+        {"case_id": case_id, "version": 1, "workflow_key": "r0-reference-field-export/v1"},
         f"v3-e2e-{uuid4()}",
     )
     result = CaseExecutor(LocalComposeRunner(), mirror, store).execute_next(
-        Path(".local/v3-e2e-scratch")
+        Path(".local/v3-e2e-scratch"), run.run_id
     )
     assert result is not None
     attempt, execution = result
     final = mirror.inspect(run.run_id)
     assert attempt.run_id == run.run_id
     assert execution.exit_code == 0, execution.stderr
-    expected = "solved" if runner_key == "r0-field-export" else "indeterminate"
-    assert (final.lifecycle, final.outcome) == ("terminal", expected)
-    assert mirror.detail_page(run.run_id, "verify")[0]
-    if runner_key == "r0-field-export":
-        response = FieldArtifact(LiveFieldArtifactSource(mirror, store)).field_artifact(run.run_id)
-        assert response["state"] == "available", response
-        assert response["payload"]["field"]["units"] == "mm"
-        assert "field/displacement/hdf5" in response["payload"]["provenance"]["artifact_digests"]
-    print(f"v3-e2e run={run.run_id} outcome={final.outcome} runner={runner_key}")
+    assert (final.lifecycle, final.outcome) == ("terminal", "solved")
+    assert mirror.detail_page(run.run_id, "publish")[0]
+    response = FieldArtifact(LiveFieldArtifactSource(mirror, store)).field_artifact(run.run_id)
+    assert response["state"] == "available", response
+    assert response["payload"]["field"]["units"] == "mm"
+    assert "field/displacement/hdf5" in response["payload"]["provenance"]["artifact_digests"]
+    print(f"v3-e2e run={run.run_id} outcome={final.outcome} workflow=r0-reference-field-export/v1")
 
 
 if __name__ == "__main__":

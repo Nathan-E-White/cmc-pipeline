@@ -24,6 +24,10 @@ COPY reference/python /opt/cmc/python
 COPY reference/tests /opt/cmc/tests
 COPY reference/scripts/reference-solver /opt/cmc/bin/reference-solver
 RUN chmod 0755 /opt/cmc/bin/reference-solver
+RUN python3 /opt/cmc/python/generate_r0_case_family.py --template /opt/cmc/cases/r0-elastic-displacement-v1.json --output /opt/cmc/cases
+RUN test -s /opt/cmc/cases/r0-elastic-displacement-e180-v1.json \
+    && test -s /opt/cmc/cases/r0-elastic-displacement-e200-v1.json \
+    && test -s /opt/cmc/cases/r0-elastic-displacement-e220-v1.json
 RUN python3 /opt/cmc/python/validate_reversible_case.py --case-card /opt/cmc/cases/edge-cracked-plate-reversible-v2.json
 RUN python3 /opt/cmc/tests/validate_zero_traction_reversible_regression.py
 RUN for level in 'coarse 2 10' 'medium 1 5' 'fine 0.5 2.5'; do \
