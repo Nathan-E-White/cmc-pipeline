@@ -1,18 +1,29 @@
 import { createEffect, createSignal, Show } from "solid-js";
 
 import {
-	parseFieldArtifact,
 	type FieldArtifactResponse,
+	parseFieldArtifact,
 } from "../field-artifact";
 
 export function RunFieldViewer(props: { runId: string }) {
 	const [response, setResponse] = createSignal<FieldArtifactResponse>();
 	const [error, setError] = createSignal<string>();
 	createEffect(() => {
-		void fetch(`/api/v3/runs/${props.runId}/field-artifact`)
+		void fetch(`/api/v3/runs/${props.runId}/physics-result`)
 			.then(async (result) => {
-				if (!result.ok) throw new Error("Field artifact unavailable.");
-				return parseFieldArtifact(await result.json());
+				if (!result.ok) throw new Error("Physics result unavailable.");
+				const resultView = (await result.json()) as {
+					accepted_reference_field: unknown;
+					field_availability: {
+						state: "unavailable" | "indeterminate";
+						reason?: string;
+					};
+				};
+				if (resultView.accepted_reference_field)
+					return parseFieldArtifact(resultView.accepted_reference_field);
+				throw new Error(
+					`${resultView.field_availability.state}: ${resultView.field_availability.reason ?? "result_unavailable"}`,
+				);
 			})
 			.then(setResponse)
 			.catch((cause: unknown) =>
@@ -78,7 +89,9 @@ function AvailableField(props: {
 		return `${((x - minX) / spanX) * 100},${100 - ((y - minY) / spanY) * 100}`;
 	};
 	const colour = (triangle: number[]) => {
-		const value = triangle.reduce((sum, index) => sum + magnitudes[index], 0) / triangle.length;
+		const value =
+			triangle.reduce((sum, index) => sum + magnitudes[index], 0) /
+			triangle.length;
 		const ratio = max === min ? 0.5 : (value - min) / (max - min);
 		return `hsl(${220 - ratio * 220} 70% 48%)`;
 	};
@@ -113,7 +126,9 @@ function AvailableField(props: {
 				{provenance.evidence_disposition ?? "unavailable"}
 			</p>
 			<p>boundary: {provenance.claim_boundary}</p>
-			<p>{`artifact identities: ${Object.entries(provenance.artifact_digests).map(([role, digest]) => `${role}:${digest}`).join(" · ")}`}</p>
+			<p>{`artifact identities: ${Object.entries(provenance.artifact_digests)
+				.map(([role, digest]) => `${role}:${digest}`)
+				.join(" · ")}`}</p>
 		</>
 	);
 }

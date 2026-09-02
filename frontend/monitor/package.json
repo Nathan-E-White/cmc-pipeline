@@ -1,0 +1,12 @@
+{
+  "name": "@cmc/monitor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 3000",
+    "test": "vitest run",
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "generate-routes": "tsr generate"
+  }
+}

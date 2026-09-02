@@ -2,7 +2,6 @@ import { Shape, ShapeStream } from "@electric-sql/client";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 
 import { type EvidenceDetail, EvidenceSummary } from "./EvidenceSummary";
-import { RunFieldViewer } from "./FieldViewer";
 
 type RunSummary = {
 	run_id: string;
@@ -70,7 +69,6 @@ export function V3RunRegister() {
 	const [before, setBefore] = createSignal<Record<string, number | null>>({});
 	const [error, setError] = createSignal<string | null>(null);
 	const [registerSequence, setRegisterSequence] = createSignal(0);
-	const [selectedRunId, setSelectedRunId] = createSignal<string>();
 	const [snapshotReady, setSnapshotReady] = createSignal(false);
 	const snapshot = async () => {
 		const response = await fetch("/api/v3/runs");
@@ -234,15 +232,11 @@ export function V3RunRegister() {
 								loadOlder={() => loadDetails(run)}
 								terminal={run.lifecycle === "terminal"}
 							/>
-							<button
-								onClick={() => setSelectedRunId(run.run_id)}
-								type="button"
+							<a
+								href={`${import.meta.env.VITE_PHYSICS_APP_ORIGIN ?? "http://127.0.0.1:3002"}/runs/${encodeURIComponent(run.run_id)}`}
 							>
-								Inspect accepted field
-							</button>
-							<Show when={selectedRunId() === run.run_id}>
-								<RunFieldViewer runId={run.run_id} />
-							</Show>
+								View physics result
+							</a>
 						</article>
 					);
 				}}

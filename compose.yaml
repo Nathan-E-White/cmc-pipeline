@@ -103,14 +103,27 @@ services:
       minio:
         condition: service_healthy
 
-  frontend:
+  monitor:
     build:
       context: ./frontend
+      dockerfile: monitor/Dockerfile
+      args:
+        VITE_PHYSICS_APP_ORIGIN: ${CMC_PHYSICS_APP_ORIGIN:-http://127.0.0.1:3002}
     depends_on:
       backend:
         condition: service_started
     ports:
       - "3000:80"
+
+  app:
+    build:
+      context: ./frontend
+      dockerfile: app/Dockerfile
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "3002:80"
 
   reference-solver:
     build:

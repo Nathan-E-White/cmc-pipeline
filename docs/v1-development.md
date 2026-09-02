@@ -11,28 +11,29 @@ python3 -m venv .venv
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-The frontend runs on port 3000 and proxies `/api` to that backend:
+The post-run physics/results app runs on port 3002 and proxies `/api` to that backend:
 
 ```sh
 cd frontend
 bun install
-bun run dev
+bun run dev:app
 ```
 
 ## Production composition
 
-The frontend and fixture backend are independently runnable modules. Deploy the
-frontend's static or SSR process separately from the FastAPI process, then put
-a reverse proxy in front of both: serve browser assets from the frontend target
+The results app and fixture backend are independently runnable modules. Deploy the
+results app's static process separately from the FastAPI process, then put
+a reverse proxy in front of both: serve browser assets from the results-app target
 and forward same-origin `/api/v1` requests to the fixture backend. The browser
 therefore retains the V1 relative `/api/v1` interface without a CORS policy or
-an implication that the backend runs inside the frontend process.
+an implication that the backend runs inside the browser process. The operational
+monitor is a separate browser application (`bun run dev:monitor`, port 3000).
 
 Run the delivery checks before treating a change as complete:
 
 ```sh
 cd backend && .venv/bin/python -m pytest && .venv/bin/ruff check app tests
-cd frontend && bun run test && bunx tsc --noEmit && bun run check && bun run build
+cd frontend && bun run test:app && bun run build:app
 python3 reference/tests/validate_reversible_cohesive_convergence_orchestration.py
 ```
 

@@ -13,6 +13,7 @@ from minio import Minio
 from pydantic import BaseModel
 
 from app.field_artifact import FieldArtifact
+from app.physics_result_view import PhysicsResultView
 from app.run_mirror import MinioDigestStore, PostgresRunMirror, RunMirrorError
 
 router = APIRouter(prefix="/api/v3", tags=["v3-run-register"])
@@ -103,6 +104,14 @@ def detail_page(
 def get_field_artifact(run_id: str) -> dict:
     try:
         return field_artifact().field_artifact(run_id)
+    except (RunMirrorError, ValueError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@router.get("/runs/{run_id}/physics-result")
+def get_physics_result(run_id: str) -> dict:
+    try:
+        return PhysicsResultView(field_artifact()).result(run_id)
     except (RunMirrorError, ValueError) as error:
         raise HTTPException(422, str(error)) from error
 

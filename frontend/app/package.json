@@ -1,0 +1,12 @@
+{
+  "name": "@cmc/results-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 3002",
+    "test": "bun test src/simulation-client.test.ts && vitest run",
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "generate-routes": "tsr generate"
+  }
+}

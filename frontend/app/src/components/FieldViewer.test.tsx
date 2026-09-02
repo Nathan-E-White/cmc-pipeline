@@ -1,8 +1,7 @@
 import { render } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
-
-import { FieldViewer } from "./FieldViewer";
 import { parseFieldArtifact } from "../field-artifact";
+import { FieldViewer } from "./FieldViewer";
 
 describe("FieldViewer", () => {
 	it("renders geometry, units, and provenance only for an available payload", () => {
@@ -74,8 +73,8 @@ describe("FieldViewer", () => {
 	});
 
 	it("rejects an unknown response version before it reaches the viewer", () => {
-		expect(() => parseFieldArtifact({ version: "cmc.field-artifact.v2" })).toThrow(
-			"Unsupported field artifact version.",
-		);
+		expect(() =>
+			parseFieldArtifact({ version: "cmc.field-artifact.v2" }),
+		).toThrow("Unsupported field artifact version.");
 	});
 });

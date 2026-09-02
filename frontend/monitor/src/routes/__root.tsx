@@ -17,7 +17,7 @@ export const Route = createRootRouteWithContext()({
 			{ name: "viewport", content: "width=device-width, initial-scale=1" },
 		],
 		links: [{ rel: "stylesheet", href: styleCss }],
-		title: "CMC Fracture Pipeline",
+		title: "CMC Pipeline Monitor",
 	}),
 	shellComponent: RootComponent,
 });
