@@ -12,6 +12,37 @@ _Avoid_: ground truth, exact solution
 A learned approximation to selected reference-solution outputs over a bounded input domain.
 _Avoid_: solver replacement, physics engine
 
+**Reference corpus**:
+An immutable, declared collection of accepted reference Field Sets with compatible
+problem-card evidence and a full-case training/held-out split. It is training
+input evidence, not a collection of arbitrary mesh nodes or quadrature points.
+_Avoid_: dataset (when membership, split, and evidence identity are material)
+
+**Provenance closure**:
+The verified transitive chain from declared reference evidence through a frozen
+reference corpus, recipe/runtime, model release, export/parity receipt, and a
+derived experimental surrogate observation or projection. Byte identity alone
+does not establish provenance closure.
+_Avoid_: checksum chain, validated lineage
+
+**Model release**:
+A digest-addressed experimental surrogate artifact with its frozen corpus,
+problem-card, recipe/runtime, weights, held-out metrics, limits, model card,
+and declared export availability. It does not decide a reference run outcome.
+_Avoid_: approved model, solver version
+
+**Inference package**:
+A browser- or runtime-compatible, digest-addressed export of one model release
+with declared tensor/unit contracts, transforms, applicability fingerprint, and
+parity receipt. Its use remains experimental and case-bound.
+_Avoid_: model download, frontend solver
+
+**Workflow submission receipt**:
+The immutable record that a compiled workflow digest was acknowledged by a
+declared execution target, including its target identity and observation cursor.
+It establishes neither execution completion nor a reference numerical outcome.
+_Avoid_: run result, scheduler acceptance
+
 **Fracture quantity**:
 A declared crack-driving output, such as a contour- or domain-evaluated $J$-integral, with the assumptions and numerical details required to interpret it.
 _Avoid_: toughness (unless material-property identification is established)
