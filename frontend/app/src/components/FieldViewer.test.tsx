@@ -72,6 +72,43 @@ describe("FieldViewer", () => {
 		expect(screen.getByText("indeterminate: run_not_accepted")).toBeTruthy();
 	});
 
+	it("keeps reference and experimental result states visible", () => {
+		const screen = render(() => (
+			<FieldViewer
+				response={undefined}
+				resultView={{
+					accepted_reference_field: null,
+					experimental_onnx_observation: {
+						claim_boundary: "Experimental only.",
+						reason: "no_declared_compatible_release",
+						state: "unavailable",
+					},
+					field_availability: {
+						reason: "run_not_accepted",
+						state: "indeterminate",
+					},
+					provenance: {
+						case_digest: "case-1",
+						evidence_disposition: "indeterminate",
+						outcome: "indeterminate",
+						run_id: "run-1",
+					},
+					reference_result: { kind: "unavailable", state: "indeterminate" },
+					run_id: "run-1",
+					version: "cmc.physics-result-view.v1",
+				}}
+			/>
+		));
+		expect(screen.getByText(/Reference result: indeterminate/)).toBeTruthy();
+		expect(screen.getByText(/Experimental ONNX: unavailable/)).toBeTruthy();
+		expect(screen.getByText("Experimental only.")).toBeTruthy();
+		expect(
+			screen.getByText(
+				"Result provenance: run run-1 · case case-1 · outcome indeterminate · disposition indeterminate",
+			),
+		).toBeTruthy();
+	});
+
 	it("rejects an unknown response version before it reaches the viewer", () => {
 		expect(() =>
 			parseFieldArtifact({ version: "cmc.field-artifact.v2" }),

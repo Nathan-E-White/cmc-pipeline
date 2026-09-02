@@ -33,7 +33,7 @@ Run the delivery checks before treating a change as complete:
 
 ```sh
 cd backend && .venv/bin/python -m pytest && .venv/bin/ruff check app tests
-cd frontend && bun run test:app && bun run build:app
+cd frontend && bun run test && bun run check && bun run build:monitor && bun run build:app
 python3 reference/tests/validate_reversible_cohesive_convergence_orchestration.py
 ```
 

@@ -5,25 +5,41 @@ import {
 	parseFieldArtifact,
 } from "../field-artifact";
 
+export type PhysicsResultViewResponse = {
+	accepted_reference_field: unknown | null;
+	experimental_onnx_observation: {
+		claim_boundary: string;
+		reason: string;
+		state: "unavailable";
+	};
+	field_availability: {
+		reason?: string | null;
+		state: "available" | "unavailable" | "indeterminate";
+	};
+	provenance: Record<string, unknown>;
+	reference_result: {
+		kind: "accepted_field_artifact" | "unavailable";
+		state: "available" | "unavailable" | "indeterminate";
+	};
+	run_id: string;
+	version: "cmc.physics-result-view.v1";
+};
+
 export function RunFieldViewer(props: { runId: string }) {
 	const [response, setResponse] = createSignal<FieldArtifactResponse>();
+	const [resultView, setResultView] = createSignal<PhysicsResultViewResponse>();
 	const [error, setError] = createSignal<string>();
 	createEffect(() => {
 		void fetch(`/api/v3/runs/${props.runId}/physics-result`)
 			.then(async (result) => {
 				if (!result.ok) throw new Error("Physics result unavailable.");
-				const resultView = (await result.json()) as {
-					accepted_reference_field: unknown;
-					field_availability: {
-						state: "unavailable" | "indeterminate";
-						reason?: string;
-					};
-				};
-				if (resultView.accepted_reference_field)
-					return parseFieldArtifact(resultView.accepted_reference_field);
-				throw new Error(
-					`${resultView.field_availability.state}: ${resultView.field_availability.reason ?? "result_unavailable"}`,
-				);
+				const view = (await result.json()) as PhysicsResultViewResponse;
+				if (view.version !== "cmc.physics-result-view.v1")
+					throw new Error("Unsupported physics result version.");
+				setResultView(view);
+				return view.accepted_reference_field
+					? parseFieldArtifact(view.accepted_reference_field)
+					: undefined;
 			})
 			.then(setResponse)
 			.catch((cause: unknown) =>
@@ -34,11 +50,18 @@ export function RunFieldViewer(props: { runId: string }) {
 				),
 			);
 	});
-	return <FieldViewer response={response()} error={error()} />;
+	return (
+		<FieldViewer
+			response={response()}
+			resultView={resultView()}
+			error={error()}
+		/>
+	);
 }
 
 export function FieldViewer(props: {
 	response: FieldArtifactResponse | undefined;
+	resultView?: PhysicsResultViewResponse;
 	error?: string;
 }) {
 	const response = () => props.response;
@@ -48,6 +71,9 @@ export function FieldViewer(props: {
 			class="field-artifact-viewer"
 			aria-label="Accepted reference field viewer"
 		>
+			<Show when={props.resultView}>
+				{(view) => <PhysicsResultSummary result={view()} />}
+			</Show>
 			<Show when={props.error}>
 				<output>{props.error}</output>
 			</Show>
@@ -60,6 +86,19 @@ export function FieldViewer(props: {
 			) : (
 				<FieldState response={response()} />
 			)}
+		</section>
+	);
+}
+
+function PhysicsResultSummary(props: { result: PhysicsResultViewResponse }) {
+	const provenance = props.result.provenance;
+	return (
+		<section aria-label="Physics result declaration">
+			<p>{`Reference result: ${props.result.reference_result.state} (${props.result.reference_result.kind})`}</p>
+			<p>{`Field availability: ${props.result.field_availability.state}${props.result.field_availability.reason ? ` (${props.result.field_availability.reason})` : ""}`}</p>
+			<p>{`Experimental ONNX: ${props.result.experimental_onnx_observation.state} (${props.result.experimental_onnx_observation.reason})`}</p>
+			<p>{props.result.experimental_onnx_observation.claim_boundary}</p>
+			<p>{`Result provenance: run ${String(provenance.run_id ?? props.result.run_id)} · case ${String(provenance.case_digest ?? "unavailable")} · outcome ${String(provenance.outcome ?? "unavailable")} · disposition ${String(provenance.evidence_disposition ?? "unavailable")}`}</p>
 		</section>
 	);
 }
