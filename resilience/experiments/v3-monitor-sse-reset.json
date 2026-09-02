@@ -1,0 +1,16 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-monitor-sse-reset",
+  "title": "Monitor resumes compact SSE after reset",
+  "state": "deferred",
+  "activation": "Operational Presentation selected-run transport is implemented",
+  "hypothesis": "One bounded reset on the monitor-to-backend SSE route causes a cursor-based reconnect without duplicate rows or raw event interpretation.",
+  "target": { "kind": "toxiproxy", "route": "monitor-to-backend-sse" },
+  "fault": { "kind": "toxiproxy-reset", "duration_seconds": 5, "recovery": "remove-toxic" },
+  "probes": {
+    "baseline": ["monitor.snapshot", "monitor.electric", "monitor.register-sse"],
+    "during_fault": ["monitor.connection-change"],
+    "recovery": ["monitor.cursor-resume", "monitor.no-duplicate-rows"]
+  },
+  "assertions": ["no-lifecycle-or-outcome-mutation-from-sse", "snapshot-precedes-stream", "cleanup-removes-toxic"]
+}

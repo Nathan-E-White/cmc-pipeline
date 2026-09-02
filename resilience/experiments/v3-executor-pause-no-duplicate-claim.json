@@ -1,0 +1,15 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-executor-pause-no-duplicate-claim",
+  "title": "Serial executor pause keeps one attempt",
+  "state": "scaffolded",
+  "hypothesis": "Pausing the serial executor preserves a single claimed attempt and ordered Run Mirror facts; it does not create a hidden retry or terminal cancellation claim.",
+  "target": { "kind": "container", "service": "executor" },
+  "fault": { "kind": "pause", "duration_seconds": 5, "recovery": "unpause-same-container" },
+  "probes": {
+    "baseline": ["run-mirror.single-claimed-attempt", "monitor.snapshot", "monitor.register-sse"],
+    "during_fault": ["monitor.factual-phase-observation", "run-mirror.attempt-count"],
+    "recovery": ["run-mirror.original-attempt-resumes", "run-mirror.monotonic-sequence"]
+  },
+  "assertions": ["exactly-one-claim-and-attempt", "no-automatic-retry", "cancellation-is-not-terminal-until-observed", "cleanup-restores-same-container"]
+}

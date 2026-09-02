@@ -1,0 +1,15 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-postgres-pause",
+  "title": "Ledger pause preserves ordered recovery",
+  "state": "scaffolded",
+  "hypothesis": "When the lifecycle ledger is paused, the system cannot silently make a new authoritative decision; recovery preserves the same run identity and monotonic sequence.",
+  "target": { "kind": "container", "service": "postgres" },
+  "fault": { "kind": "pause", "duration_seconds": 5, "recovery": "unpause-same-container" },
+  "probes": {
+    "baseline": ["submitted-run.identity", "run-mirror.last-sequence", "monitor.snapshot"],
+    "during_fault": ["backend.authoritative-read-unavailable"],
+    "recovery": ["run-mirror.same-run-inspectable", "run-mirror.monotonic-sequence", "monitor.snapshot-refetch"]
+  },
+  "assertions": ["no-duplicate-run-or-attempt", "no-reordered-event", "electric-is-not-authority", "cleanup-restores-same-container"]
+}

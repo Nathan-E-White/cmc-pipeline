@@ -1,0 +1,37 @@
+{
+  "version": "cmc.resilience-suite.v1",
+  "environment": "local-development",
+  "docker_context": "orbstack",
+  "compose_project": "cmc-pipeline-v3",
+  "evidence_directory": ".local/resilience-evidence",
+  "limits": {
+    "total_seconds": 90,
+    "baseline_seconds": 20,
+    "probe_seconds": 10,
+    "recovery_seconds": 30,
+    "cleanup_seconds": 15
+  },
+  "services": {
+    "postgres": { "role": "lifecycle-ledger", "fault_opt_in": true },
+    "minio": { "role": "immutable-artifact-store", "fault_opt_in": true },
+    "electric": { "role": "monitor-read-projection", "fault_opt_in": true },
+    "backend": { "role": "authoritative-api", "fault_opt_in": true },
+    "executor": { "role": "serial-attempt-executor", "fault_opt_in": true }
+  },
+  "clients": {
+    "monitor": {
+      "url": "http://127.0.0.1:3000",
+      "requires": ["snapshot", "electric", "register-sse"]
+    },
+    "physics_app": {
+      "url": "http://127.0.0.1:3002",
+      "requires": ["selected-run-http"]
+    }
+  },
+  "deferred_profiles": {
+    "ml-resilience.v1": {
+      "activation_slice": 7,
+      "reason": "The ML rig must first be made functional through its own implementation evidence."
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-electric-pause",
+  "title": "Monitor projection recovers without becoming authority",
+  "state": "scaffolded",
+  "hypothesis": "Pausing Electric degrades the monitor projection while selected-run HTTP remains independently usable; recovery resumes from a completed snapshot without revision regression.",
+  "target": { "kind": "container", "service": "electric" },
+  "fault": { "kind": "pause", "duration_seconds": 5, "recovery": "unpause-same-container" },
+  "probes": {
+    "baseline": ["monitor.snapshot", "monitor.electric", "monitor.register-sse", "physics-app.selected-run"],
+    "during_fault": ["monitor.projection-unavailable", "physics-app.selected-run"],
+    "recovery": ["monitor.electric-after-snapshot", "monitor.monotonic-register-revision"]
+  },
+  "assertions": ["physics-app-has-no-electric-dependency", "snapshot-precedes-resume", "cleanup-restores-same-container"]
+}

@@ -1,0 +1,15 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-minio-stop-collector-refusal",
+  "title": "Artifact-store loss cannot create accepted evidence",
+  "state": "scaffolded",
+  "hypothesis": "Stopping MinIO during a declared collector phase records an explicit publication refusal or unavailable disposition and never an accepted Field Artifact.",
+  "target": { "kind": "container", "service": "minio" },
+  "fault": { "kind": "stop", "duration_seconds": 5, "recovery": "start-same-container" },
+  "probes": {
+    "baseline": ["collector.declared-output-role", "monitor.snapshot", "physics-app.selected-run"],
+    "during_fault": ["collector.publication-refusal", "field-artifact.unavailable"],
+    "recovery": ["artifact-store.health", "run-mirror.terminal-disposition"]
+  },
+  "assertions": ["no-accepted-field-or-model-artifact", "no-invisible-auto-retry", "explicit-new-attempt-or-reconciliation-required", "cleanup-restores-same-container"]
+}

@@ -1,0 +1,15 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-backend-pause",
+  "title": "Backend pause preserves truthful monitor recovery",
+  "state": "scaffolded",
+  "hypothesis": "Pausing the opted-in backend makes V3 selected-run reads explicitly unavailable; recovery restores reads without fabricating lifecycle or outcome facts.",
+  "target": { "kind": "container", "service": "backend" },
+  "fault": { "kind": "pause", "duration_seconds": 5, "recovery": "unpause-same-container" },
+  "probes": {
+    "baseline": ["monitor.snapshot", "monitor.electric", "monitor.register-sse", "physics-app.selected-run"],
+    "during_fault": ["monitor.backend-unavailable", "physics-app.presentation-unavailable"],
+    "recovery": ["monitor.snapshot-refetch", "physics-app.selected-run-refetch"]
+  },
+  "assertions": ["no-fabricated-lifecycle-or-outcome", "no-eta-or-freshness-inference", "cleanup-restores-same-container"]
+}

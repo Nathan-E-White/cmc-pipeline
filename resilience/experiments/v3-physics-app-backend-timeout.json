@@ -1,0 +1,16 @@
+{
+  "version": "cmc.resilience-experiment.v1",
+  "id": "v3-physics-app-backend-timeout",
+  "title": "Physics app stays bounded during backend timeout",
+  "state": "deferred",
+  "activation": "OperationalPresentation.present route is implemented",
+  "hypothesis": "One bounded timeout on the physics-app-to-backend route yields an explicit unavailable response and a successful refetch after toxic removal.",
+  "target": { "kind": "toxiproxy", "route": "physics-app-to-backend" },
+  "fault": { "kind": "toxiproxy-timeout", "duration_seconds": 5, "recovery": "remove-toxic" },
+  "probes": {
+    "baseline": ["physics-app.deep-link", "physics-app.selected-run"],
+    "during_fault": ["physics-app.presentation-unavailable"],
+    "recovery": ["physics-app.selected-run-refetch"]
+  },
+  "assertions": ["no-electric-request", "no-global-sse-cursor", "no-raw-artifact-path-or-model-url", "cleanup-removes-toxic"]
+}
