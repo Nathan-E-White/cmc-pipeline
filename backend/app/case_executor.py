@@ -11,7 +11,24 @@ from typing import Protocol
 
 from app.artifact_collector import DeclaredOutputSet, PublicationRefusal, TypedArtifactCollector
 from app.run_mirror import ArtifactReceipt, PostgresRunMirror, RunAttempt, RunObservation
-from app.workflow_compiler import AttemptPlan, WorkflowCompiler, WorkflowRefusal
+from app.workflow_compiler import (
+    R0_WORKFLOW,
+    V1_WORKFLOW,
+    AttemptPlan,
+    WorkflowCompiler,
+    WorkflowRefusal,
+)
+
+_FIELD_EXPORT_WARNINGS = {
+    V1_WORKFLOW: (
+        "Accepted local reference field export completed; not physical validation.",
+        "Field export failed; published artifacts remain available for review.",
+    ),
+    R0_WORKFLOW: (
+        "Accepted local R0 reference field export completed; not physical validation.",
+        "R0 field export failed; published artifacts remain available for review.",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -194,6 +211,7 @@ class CaseExecutor:
             )
             self._mirror.finish_attempt(attempt.run_id, attempt.attempt_number, 125)
             raise
+        success_warning, failure_warning = _FIELD_EXPORT_WARNINGS[str(card["workflow_key"])]
         self._mirror.finish_attempt(
             attempt.run_id,
             attempt.attempt_number,
@@ -203,8 +221,8 @@ class CaseExecutor:
             phase_key="publish",
             success_event_type="field-export-finished",
             failure_event_type="field-export-failed",
-            success_warning="Accepted local R0 reference field export completed; not physical validation.",
-            failure_warning="R0 field export failed; published artifacts remain available for review.",
+            success_warning=success_warning,
+            failure_warning=failure_warning,
         )
         return attempt, result
 

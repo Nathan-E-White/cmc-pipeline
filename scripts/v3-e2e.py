@@ -10,9 +10,10 @@ from uuid import uuid4
 from minio import Minio
 
 from app.case_executor import CaseExecutor, LocalComposeRunner
-from app.run_mirror import MinioDigestStore, PostgresRunMirror
 from app.field_artifact import FieldArtifact
+from app.run_mirror import MinioDigestStore, PostgresRunMirror
 from app.v3_api import LiveFieldArtifactSource
+from app.workflow_compiler import V1_WORKFLOW
 
 
 def main() -> None:
@@ -27,9 +28,9 @@ def main() -> None:
         ),
         "cmc-artifacts",
     )
-    case_id = os.environ.get("CMC_V3_E2E_CASE_ID", "r0-elastic-displacement-e200-v1")
+    case_id = os.environ.get("CMC_V3_E2E_CASE_ID", "edge-cracked-plate-v1")
     run = mirror.submit(
-        {"case_id": case_id, "version": 1, "workflow_key": "r0-reference-field-export/v1"},
+        {"case_id": case_id, "version": 1, "workflow_key": V1_WORKFLOW},
         f"v3-e2e-{uuid4()}",
     )
     result = CaseExecutor(LocalComposeRunner(), mirror, store).execute_next(
@@ -46,7 +47,7 @@ def main() -> None:
     assert response["state"] == "available", response
     assert response["payload"]["field"]["units"] == "mm"
     assert "field/displacement/hdf5" in response["payload"]["provenance"]["artifact_digests"]
-    print(f"v3-e2e run={run.run_id} outcome={final.outcome} workflow=r0-reference-field-export/v1")
+    print(f"v3-e2e run={run.run_id} outcome={final.outcome} workflow={V1_WORKFLOW}")
 
 
 if __name__ == "__main__":

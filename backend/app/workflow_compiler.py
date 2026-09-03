@@ -9,6 +9,8 @@ from typing import Any, ClassVar
 
 SOLVER_IMAGE = "cmc-pipeline-v3-reference-solver@sha256:2ae4bfbc0d9077268880faf04c72750528bee986c94ab223a2c159969bd56fa8"
 R0_WORKFLOW = "r0-reference-field-export/v1"
+V1_WORKFLOW = "reference-field-export/v1"
+_V1_CASES = frozenset({"edge-cracked-plate-v1"})
 _R0_CASES = frozenset(
     {
         "r0-elastic-displacement-e180-v1",
@@ -119,7 +121,7 @@ class WorkflowCompiler:
     )
 
     def compile(self, plan: AttemptPlan) -> CompiledWorkflow | WorkflowRefusal:
-        if plan.workflow_key != R0_WORKFLOW:
+        if plan.workflow_key not in {V1_WORKFLOW, R0_WORKFLOW}:
             return WorkflowRefusal("unknown_workflow", plan.workflow_key)
         if plan.target not in {"compose", "hera"}:
             return WorkflowRefusal("target_ineligible", plan.target)
@@ -130,11 +132,13 @@ class WorkflowCompiler:
         if set(plan.requested_resources) != {"cpu"}:
             return WorkflowRefusal("unavailable_capability", ",".join(plan.requested_resources))
         case_id = plan.case_card.get("case_id")
-        if case_id not in _R0_CASES:
+        if plan.workflow_key == V1_WORKFLOW and case_id not in _V1_CASES:
+            return WorkflowRefusal("invalid_v1_case_card", str(case_id))
+        if plan.workflow_key == R0_WORKFLOW and case_id not in _R0_CASES:
             return WorkflowRefusal("invalid_r0_case_card", str(case_id))
         if any(key in plan.case_card for key in ("runner_key", "image", "command", "service")):
             return WorkflowRefusal("caller_selected_execution", str(case_id))
-        stages = self._case_stages(str(case_id))
+        stages = self._case_stages(plan.workflow_key, str(case_id))
         if not self._valid_graph(stages):
             return WorkflowRefusal("invalid_dependency", plan.workflow_key)
         inventory = self._inventory(plan, stages)
@@ -142,7 +146,9 @@ class WorkflowCompiler:
             plan.workflow_key, plan.target, stages, sha256(inventory).hexdigest(), inventory
         )
 
-    def _case_stages(self, case_id: str) -> tuple[WorkflowStage, ...]:
+    def _case_stages(self, workflow_key: str, case_id: str) -> tuple[WorkflowStage, ...]:
+        if workflow_key == V1_WORKFLOW:
+            return self._stages
         card_arg = ("--case-card", f"/opt/cmc/cases/{case_id}.json")
         return tuple(
             WorkflowStage(**{**asdict(stage), "command": (*stage.command, *card_arg)})

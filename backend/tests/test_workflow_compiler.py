@@ -1,4 +1,5 @@
 from app.workflow_compiler import (
+    V1_WORKFLOW,
     AttemptPlan,
     HeraWorkflowRenderer,
     WorkflowCompiler,
@@ -28,6 +29,61 @@ def test_compiler_materializes_the_declared_reference_export_in_a_stable_order()
         "@sha256:2ae4bfbc0d9077268880faf04c72750528bee986c94ab223a2c159969bd56fa8"
     )
     assert compiled.inventory_digest == WorkflowCompiler().compile(plan).inventory_digest
+
+
+def test_compiler_materializes_the_accepted_v1_export_as_a_separate_catalog_family() -> None:
+    plan = AttemptPlan(
+        run_id="v1-run-1",
+        attempt_number=1,
+        case_card={"case_id": "edge-cracked-plate-v1"},
+        workflow_key=V1_WORKFLOW,
+        target="compose",
+        declared_inputs=("declared-case-card",),
+    )
+
+    compiled = WorkflowCompiler().compile(plan)
+
+    assert not isinstance(compiled, WorkflowRefusal)
+    assert [stage.key for stage in compiled.stages] == [
+        "mesh-audit",
+        "reference-field-export",
+        "collect-reference-field",
+    ]
+    assert compiled.stages[0].command == ("verify-case", "--output", "/artifacts")
+    assert compiled.stages[1].command == (
+        "export-r0-field-case",
+        "--output",
+        "/artifacts",
+    )
+    assert compiled.inventory_digest == WorkflowCompiler().compile(plan).inventory_digest
+
+
+def test_compiler_keeps_v1_and_r0_case_families_separate() -> None:
+    compiler = WorkflowCompiler()
+    r0_case_id = "r0-elastic-displacement-e200-v1"
+    r0_under_v1 = compiler.compile(
+        AttemptPlan(
+            "run-1",
+            1,
+            {"case_id": r0_case_id},
+            V1_WORKFLOW,
+            "compose",
+            declared_inputs=("declared-case-card",),
+        )
+    )
+    v1_under_r0 = compiler.compile(
+        AttemptPlan(
+            "run-1",
+            1,
+            {"case_id": "edge-cracked-plate-v1"},
+            "r0-reference-field-export/v1",
+            "compose",
+            declared_inputs=("declared-case-card",),
+        )
+    )
+
+    assert r0_under_v1 == WorkflowRefusal("invalid_v1_case_card", r0_case_id)
+    assert v1_under_r0 == WorkflowRefusal("invalid_r0_case_card", "edge-cracked-plate-v1")
 
 
 def test_compiler_refuses_an_undeclared_or_mutable_workflow_request() -> None:

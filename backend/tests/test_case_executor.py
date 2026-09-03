@@ -6,6 +6,7 @@ import pytest
 
 from app.case_executor import CaseExecutor, ExecutionRequest, ExecutionResult
 from app.run_mirror import RunAttempt
+from app.workflow_compiler import V1_WORKFLOW
 
 
 class ReentrantRunner:
@@ -36,10 +37,12 @@ class FakeMirror:
         self,
         runner_key: str = "r0-reference-field-export/v1",
         workflow_key: str | None = "r0-reference-field-export/v1",
+        case_id: str = "r0-elastic-displacement-e200-v1",
     ) -> None:
         self.claimed = False
         self.runner_key = runner_key
         self.workflow_key = workflow_key
+        self.case_id = case_id
         self.observations = []
         self.finished = []
 
@@ -47,7 +50,7 @@ class FakeMirror:
         if self.claimed:
             return None
         self.claimed = True
-        card = {"case_id": "r0-elastic-displacement-e200-v1", "workflow_key": self.workflow_key}
+        card = {"case_id": self.case_id, "workflow_key": self.workflow_key}
         return RunAttempt("run-1", 1, self.runner_key, "cmc-v3-run-1-attempt-1", "running", card)
 
     def record(self, run_id, attempt_number, observation) -> None:
@@ -160,3 +163,27 @@ def test_executor_uses_declared_field_export_policy_without_knowing_field_roles(
         "success_warning": "Accepted local R0 reference field export completed; not physical validation.",
         "failure_warning": "R0 field export failed; published artifacts remain available for review.",
     }
+
+
+def test_executor_runs_the_accepted_v1_tracer_through_the_catalog_and_collector(
+    tmp_path: Path,
+) -> None:
+    mirror = FakeMirror(workflow_key=V1_WORKFLOW, case_id="edge-cracked-plate-v1")
+    executor = CaseExecutor(FieldExportRunner(), mirror, MemoryPublisher())  # type: ignore[arg-type]
+
+    result = executor.execute_next(tmp_path)
+
+    assert result is not None
+    assert [item[2].event_type for item in mirror.observations] == [
+        "workflow-rendered",
+        "stage-started",
+        "stage-finished",
+        "stage-started",
+        "stage-finished",
+        "stage-started",
+        "stage-finished",
+    ]
+    assert mirror.observations[-1][2].artifacts
+    assert mirror.finished[0][3]["success_warning"] == (
+        "Accepted local reference field export completed; not physical validation."
+    )

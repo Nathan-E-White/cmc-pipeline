@@ -57,9 +57,10 @@ docker --context orbstack compose up -d executor
 An HTTP submission is picked up automatically. `reference-solver` executes
 `verify-case`, so an exit code of zero is recorded as a completed verification
 with an `indeterminate` numerical outcome; it must not be read as a solved
-physical case. `r0-field-export` is separate: it requires an accepted mesh audit
-and solved local reference summary before it can publish an accepted local field
-artifact. Neither runner establishes physical validation. Exercise the declared container path directly with:
+physical case. The `reference-field-export/v1` catalog entry is the accepted V1
+compatibility tracer: it compiles the mesh audit, existing field export, and
+typed collector without allowing a caller-selected runner. Neither runner
+establishes physical validation. Exercise the declared container path directly with:
 
 ```sh
 CMC_RUN_MIRROR_DSN=postgresql://cmc:local-development-only@localhost:5433/cmc_pipeline \\

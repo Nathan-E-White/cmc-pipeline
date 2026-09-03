@@ -44,6 +44,25 @@ def r0_card(case_id: str = "r0-elastic-displacement-e200-v1") -> dict[str, objec
     return {"case_id": case_id, "version": 1, "workflow_key": "r0-reference-field-export/v1"}
 
 
+def v1_card() -> dict[str, object]:
+    return {
+        "case_id": "edge-cracked-plate-v1",
+        "version": 1,
+        "workflow_key": "reference-field-export/v1",
+    }
+
+
+def test_submission_admits_the_existing_v1_field_export_without_a_runner_key(
+    run_mirror: PostgresRunMirror,
+) -> None:
+    run = run_mirror.submit(v1_card(), f"contract-submit-v1-{uuid4()}")
+
+    assert run.lifecycle == "submitted"
+    attempt = run_mirror.claim_next_attempt(run.run_id)
+    assert attempt is not None
+    assert attempt.case_card == v1_card()
+
+
 def test_submission_is_idempotent_and_reconstructs_after_a_new_adapter(
     run_mirror: PostgresRunMirror,
 ) -> None:
