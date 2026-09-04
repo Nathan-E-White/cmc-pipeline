@@ -15,6 +15,11 @@ type RunSummary = {
 	container_observed_at?: string | null;
 	solver_evidence_at?: string | null;
 };
+export type RunRegisterSnapshot = {
+	runs: RunSummary[];
+	register_sequence: number;
+	unavailableReason?: string;
+};
 type DetailResponse = {
 	details: Array<{
 		sequence: number;
@@ -61,15 +66,26 @@ function detailText(item: DetailResponse["details"][number]): EvidenceDetail {
 	};
 }
 
-export function V3RunRegister() {
-	const [runs, setRuns] = createSignal<RunSummary[]>([]);
+export function V3RunRegister(props: {
+	initialSnapshot?: RunRegisterSnapshot;
+}) {
+	const [runs, setRuns] = createSignal<RunSummary[]>(
+		props.initialSnapshot?.runs ?? [],
+	);
 	const [details, setDetails] = createSignal<Record<string, EvidenceDetail[]>>(
 		{},
 	);
 	const [before, setBefore] = createSignal<Record<string, number | null>>({});
-	const [error, setError] = createSignal<string | null>(null);
-	const [registerSequence, setRegisterSequence] = createSignal(0);
-	const [snapshotReady, setSnapshotReady] = createSignal(false);
+	const [error, setError] = createSignal<string | null>(
+		props.initialSnapshot?.unavailableReason ?? null,
+	);
+	const [registerSequence, setRegisterSequence] = createSignal(
+		props.initialSnapshot?.register_sequence ?? 0,
+	);
+	const [snapshotReady, setSnapshotReady] = createSignal(
+		props.initialSnapshot !== undefined &&
+			props.initialSnapshot.unavailableReason === undefined,
+	);
 	const snapshot = async () => {
 		const response = await fetch("/api/v3/runs");
 		if (!response.ok) throw new Error("Run register snapshot unavailable.");
@@ -83,6 +99,7 @@ export function V3RunRegister() {
 		setSnapshotReady(true);
 	};
 	createEffect(() => {
+		if (props.initialSnapshot) return;
 		void snapshot().catch((cause: unknown) =>
 			setError(
 				cause instanceof Error ? cause.message : "Run register unavailable.",
@@ -90,7 +107,9 @@ export function V3RunRegister() {
 		);
 	});
 	createEffect(() => {
+		if (!snapshotReady()) return;
 		const aborter = new AbortController();
+		let receivedNonEmptyProjection = false;
 		const runShape = new Shape(
 			new ShapeStream<ElectricRunRow>({
 				url: "/electric/v1/shape",
@@ -113,25 +132,31 @@ export function V3RunRegister() {
 					(phase) => [`${phase.run_id}:${phase.phase_key}`, phase] as const,
 				),
 			);
-			setRuns(
-				runShape.currentRows.map((run) => {
-					const phase = run.current_phase_key
-						? phaseByRun.get(`${run.run_id}:${run.current_phase_key}`)
-						: undefined;
-					return {
-						run_id: run.run_id,
-						revision: Number(run.revision),
-						lifecycle: run.lifecycle,
-						outcome: run.outcome,
-						current_phase_key: run.current_phase_key,
-						state: phase?.state,
-						headline: phase?.headline ?? {},
-						trend: phase?.trend ?? {},
-						container_observed_at: phase?.last_container_observed_at,
-						solver_evidence_at: phase?.last_solver_evidence_at,
-					};
-				}),
-			);
+			const projectedRuns = runShape.currentRows.map((run) => {
+				const phase = run.current_phase_key
+					? phaseByRun.get(`${run.run_id}:${run.current_phase_key}`)
+					: undefined;
+				return {
+					run_id: run.run_id,
+					revision: Number(run.revision),
+					lifecycle: run.lifecycle,
+					outcome: run.outcome,
+					current_phase_key: run.current_phase_key,
+					state: phase?.state,
+					headline: phase?.headline ?? {},
+					trend: phase?.trend ?? {},
+					container_observed_at: phase?.last_container_observed_at,
+					solver_evidence_at: phase?.last_solver_evidence_at,
+				};
+			});
+			if (projectedRuns.length > 0) receivedNonEmptyProjection = true;
+			if (
+				projectedRuns.length === 0 &&
+				runs().length > 0 &&
+				!receivedNonEmptyProjection
+			)
+				return;
+			setRuns(projectedRuns);
 		};
 		const unsubscribeRuns = runShape.subscribe(project);
 		const unsubscribePhases = phaseShape.subscribe(project);

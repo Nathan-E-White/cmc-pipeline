@@ -4,11 +4,18 @@ import {
 	Outlet,
 	Scripts,
 } from "@tanstack/solid-router";
-import { TanStackRouterDevtools } from "@tanstack/solid-router-devtools";
-import { Suspense } from "solid-js";
-import { HydrationScript } from "solid-js/web";
+import { lazy, Show, Suspense } from "solid-js";
+import { HydrationScript, isServer } from "solid-js/web";
 
 import styleCss from "../styles.css?url";
+
+const RouterDevtools = lazy(() =>
+	import("@tanstack/solid-router-devtools").then(
+		({ TanStackRouterDevtools }) => ({
+			default: TanStackRouterDevtools,
+		}),
+	),
+);
 
 export const Route = createRootRouteWithContext()({
 	head: () => ({
@@ -28,12 +35,15 @@ function RootComponent() {
 			<head>
 				<HydrationScript />
 				<HeadContent />
+				<title>CMC Pipeline Monitor</title>
 			</head>
 			<body>
 				<Suspense>
 					<Outlet />
 				</Suspense>
-				<TanStackRouterDevtools />
+				<Show when={!isServer}>
+					<RouterDevtools />
+				</Show>
 				<Scripts />
 			</body>
 		</html>

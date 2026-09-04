@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "test": "vitest run",
+    "test:ssr": "bun run build && bun scripts/verify-ssr.mjs",
+    "test:projection": "vitest run src/components/V3RunRegister.test.tsx",
+    "test:hydration": "bun run build && bun scripts/verify-hydration.mjs",
+    "test:container": "bun scripts/verify-container-monitor.mjs",
     "build": "vite build",
     "check": "tsc --noEmit",
     "generate-routes": "tsr generate"
